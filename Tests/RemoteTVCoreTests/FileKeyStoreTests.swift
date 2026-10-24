@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import RemoteTVCore
+@testable import RemoteTVCore
 
 /// Each test gets its own temporary directory, removed afterwards.
 final class FileKeyStoreTests {
@@ -80,6 +80,45 @@ final class FileKeyStoreTests {
         for file in files {
             #expect(try permissions(of: file) == 0o600, "\(file.lastPathComponent)")
         }
+    }
+
+    @Test func hostsThatDifferOnlyInSymbolsKeepSeparateFiles() {
+        store.setKey("slash", for: "a/b")
+        store.setKey("underscore", for: "a_b")
+        store.setKey("colon", for: "a:b")
+        #expect(store.key(for: "a/b") == "slash")
+        #expect(store.key(for: "a_b") == "underscore")
+        #expect(store.key(for: "a:b") == "colon")
+    }
+
+    @Test(arguments: [
+        ("192.168.0.199", "192.168.0.199"),
+        ("tv.local", "tv.local"),
+        ("a_b", "a%5Fb"),
+        ("fe80::1%en0", "fe80%3A%3A1%25en0"),
+        ("../x", "..%2Fx"),
+    ])
+    func namesFilesSafely(_ host: String, _ name: String) {
+        #expect(FileKeyStore.fileName(host) == name)
+    }
+
+    @Test func movesAFileSavedUnderTheOldName() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "old-key".write(to: directory.appendingPathComponent("a_b.key"), atomically: true, encoding: .utf8)
+
+        #expect(store.key(for: "a:b") == "old-key")
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(files == ["a%3Ab.key"])
+    }
+
+    @Test func forgettingAlsoRemovesFilesWithTheOldName() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "old-key".write(to: directory.appendingPathComponent("a_b.key"), atomically: true, encoding: .utf8)
+        store.setKey("new-key", for: "a:b")
+
+        store.removeKey(for: "a:b")
+
+        #expect(store.key(for: "a:b") == nil)
     }
 
     private func permissions(of url: URL) throws -> Int {
