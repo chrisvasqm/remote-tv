@@ -113,8 +113,9 @@ final class RemoteModel {
             self.apps = loadedApps
             self.inputs = loadedInputs
             await refreshInfo()
-            if brand.supports(.wakeOnLAN), keyStore.mac(for: host) == nil,
-               let mac = await WakeOnLAN.macAddress(for: host) {
+            // Learn the MAC on every connect, so a replaced TV or a reused address is picked up.
+            if brand.supports(.wakeOnLAN), let mac = await WakeOnLAN.macAddress(for: host),
+               mac != keyStore.mac(for: host) {
                 keyStore.setMac(mac, for: host)
             }
         } catch {

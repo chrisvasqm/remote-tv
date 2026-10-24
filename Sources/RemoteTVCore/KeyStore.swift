@@ -59,8 +59,14 @@ public struct FileKeyStore: KeyStore {
     private func write(_ value: String, to url: URL) {
         let manager = FileManager.default
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try? manager.removeItem(at: url)
-        manager.createFile(atPath: url.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600])
+        // Write a temporary file, then rename it over the old one, so a crash never leaves no file.
+        let temp = directory.appendingPathComponent("." + url.lastPathComponent + ".tmp")
+        try? manager.removeItem(at: temp)
+        guard manager.createFile(atPath: temp.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600]),
+              rename(temp.path, url.path) == 0 else {
+            try? manager.removeItem(at: temp)
+            return
+        }
     }
 
     private func file(_ host: String, _ ext: String) -> URL {
