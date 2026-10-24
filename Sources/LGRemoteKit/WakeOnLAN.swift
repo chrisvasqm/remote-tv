@@ -29,7 +29,11 @@ public enum WakeOnLAN {
     }
 
     /// Reads the TV's MAC address from the ARP table (only while the TV is on).
-    public static func macAddress(for host: String) -> String? {
+    public static func macAddress(for host: String) async -> String? {
+        await Task.detached { readARP(host) }.value
+    }
+
+    private static func readARP(_ host: String) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/arp")
         process.arguments = ["-n", host]

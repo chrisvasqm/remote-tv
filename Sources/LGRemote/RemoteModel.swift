@@ -25,12 +25,17 @@ final class RemoteModel: ObservableObject {
     private let keyStore = KeychainKeyStore()
     private let localNetwork = LocalNetworkAccess()
     private var client: TVClient?
+    private var connectGeneration = 0
     private var pollTask: Task<Void, Never>?
+    private var lastFrame: Data?
 
     init() {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
-        localNetwork.requestPrompt()
+        localNetwork.check()
     }
+
+    /// The address as typed, without stray spaces; used for every lookup.
+    var tvHost: String { host.trimmingCharacters(in: .whitespaces) }
 
     var foregroundTitle: String {
         guard let id = foregroundAppId else { return "–" }
@@ -41,25 +46,29 @@ final class RemoteModel: ObservableObject {
     // MARK: - Connection
 
     func connect() async {
-        let host = host.trimmingCharacters(in: .whitespaces)
+        let host = tvHost
         guard !host.isEmpty else { return }
-        await client?.disconnect()
+        connectGeneration += 1
+        let generation = connectGeneration
+        await client?.shutdown()
         let client = TVClient(host: host, keyStore: keyStore)
         self.client = client
         status = keyStore.key(for: host) == nil ? .pairing : .connecting
         do {
             try await client.connect()
+            guard generation == connectGeneration else { return }
             status = .connected
             lastError = nil
-            if let mac = WakeOnLAN.macAddress(for: host) {
-                UserDefaults.standard.set(mac, forKey: "tvMac.\(host)")
-            }
             apps = (try? await client.homeApps()) ?? []
             inputs = (try? await client.inputs()) ?? []
-            await refresh()
+            await refreshInfo()
+            if let mac = await WakeOnLAN.macAddress(for: host) {
+                UserDefaults.standard.set(mac, forKey: macKey)
+            }
         } catch {
+            guard generation == connectGeneration else { return }
             log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            if LocalNetworkAccess.isDenied(error) {
+            if localNetwork.isDenied {
                 status = .networkBlocked
                 lastError = nil
             } else {
@@ -69,15 +78,29 @@ final class RemoteModel: ObservableObject {
         }
     }
 
-    /// Polls the screen while the panel is open; stops when it closes.
+    /// Live view while the panel is open: about one frame a second, read one
+    /// after another so requests never pile up on the TV. Protected screens
+    /// (always black) and app/volume info are only checked every third tick.
+    /// When the TV is unreachable it retries the connection every 10 seconds.
     func startPolling() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
-            guard let self else { return }
-            if status != .connected { await connect() }
-            while !Task.isCancelled {
-                if status == .connected { await refresh() }
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            var tick = 0
+            while !Task.isCancelled, let self {
+                switch status {
+                case .connected:
+                    if tick % 3 == 0 { await refreshInfo() }
+                    if !screenIsProtected || tick % 3 == 0 { await refreshScreen() }
+                case .idle, .unreachable, .networkBlocked:
+                    if tick % 10 == 0 {
+                        localNetwork.check()
+                        await connect()
+                    }
+                case .connecting, .pairing:
+                    break
+                }
+                tick += 1
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
     }
@@ -87,21 +110,36 @@ final class RemoteModel: ObservableObject {
         pollTask = nil
     }
 
-    func refresh() async {
+    private func refreshInfo() async {
         guard let client else { return }
         do {
             foregroundAppId = try await client.foregroundAppId()
             volume = try await client.volume()
-            let data = try await client.screenshot()
-            if let image = NSImage(data: data) {
-                screenIsProtected = image.isNearlyBlack
-                screenshot = image
-            }
         } catch {
-            if await !client.isConnected { status = .unreachable }
-            lastError = error.localizedDescription
+            await handleRefreshError(error, client)
         }
     }
+
+    private func refreshScreen() async {
+        guard let client else { return }
+        do {
+            let data = try await client.screenshot()
+            guard data != lastFrame, let image = NSImage(data: data) else { return }
+            lastFrame = data
+            screenIsProtected = image.isNearlyBlack
+            screenshot = image
+        } catch {
+            await handleRefreshError(error, client)
+        }
+    }
+
+    private func handleRefreshError(_ error: Error, _ failed: TVClient) async {
+        guard failed === client else { return }
+        if await !failed.isConnected { status = .unreachable }
+        lastError = error.localizedDescription
+    }
+
+    private var macKey: String { "tvMac.\(tvHost)" }
 
     // MARK: - Actions
 
@@ -122,15 +160,19 @@ final class RemoteModel: ObservableObject {
     }
 
     func turnOff() {
-        run { client in
-            try await client.turnOff()
-            await client.disconnect()
-        }
+        guard let client else { return }
+        connectGeneration += 1
+        self.client = nil
         status = .unreachable
+        Task {
+            // The TV often drops the socket before answering; that still means it is off.
+            try? await client.turnOff()
+            await client.shutdown()
+        }
     }
 
     func turnOn() {
-        guard let mac = UserDefaults.standard.string(forKey: "tvMac.\(host)") else {
+        guard let mac = UserDefaults.standard.string(forKey: macKey) else {
             lastError = "Turn the TV on once with the remote so the app can learn its address."
             return
         }
@@ -146,8 +188,11 @@ final class RemoteModel: ObservableObject {
     }
 
     func forgetPairing() {
-        keyStore.removeKey(for: host)
-        Task { await client?.disconnect() }
+        keyStore.removeKey(for: tvHost)
+        connectGeneration += 1
+        let old = client
+        client = nil
+        Task { await old?.shutdown() }
         status = .idle
     }
 
@@ -157,7 +202,8 @@ final class RemoteModel: ObservableObject {
             do {
                 try await action(client)
                 try? await Task.sleep(nanoseconds: 700_000_000)
-                await refresh()
+                await refreshInfo()
+                await refreshScreen()
             } catch {
                 lastError = error.localizedDescription
             }

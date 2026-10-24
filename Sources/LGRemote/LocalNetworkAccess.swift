@@ -1,27 +1,33 @@
 import AppKit
+import dnssd
 import Network
 
 /// macOS asks for Local Network access the first time an app looks for devices
 /// on the network. Browsing for a Bonjour service (declared in Info.plist under
-/// NSBonjourServices) is the reliable way to make that prompt appear.
+/// NSBonjourServices) makes that prompt appear, and the browser's state tells
+/// whether access was denied.
 @MainActor
 final class LocalNetworkAccess {
+    private(set) var isDenied = false
     private var browser: NWBrowser?
 
-    func requestPrompt() {
+    func check() {
+        browser?.cancel()
         let browser = NWBrowser(for: .bonjour(type: "_lgremote._tcp", domain: nil), using: .tcp)
-        browser.stateUpdateHandler = { _ in }
+        browser.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
+                switch state {
+                case .waiting(.dns(DNSServiceErrorType(kDNSServiceErr_PolicyDenied))):
+                    self?.isDenied = true
+                case .ready:
+                    self?.isDenied = false
+                default:
+                    break
+                }
+            }
+        }
         browser.start(queue: .main)
         self.browser = browser
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            self?.browser?.cancel()
-            self?.browser = nil
-        }
-    }
-
-    static func isDenied(_ error: Error) -> Bool {
-        (error as? URLError)?.code == .notConnectedToInternet
     }
 
     static func openSettings() {

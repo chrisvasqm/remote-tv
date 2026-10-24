@@ -40,6 +40,6 @@ results.append(await check("screenshot") {
     if arguments.count > 3 { try data.write(to: URL(fileURLWithPath: arguments[3])) }
     return "\(data.count) bytes"
 })
-results.append(await check("mac address") { WakeOnLAN.macAddress(for: arguments[1]) ?? "unknown" })
-await client.disconnect()
+results.append(await check("mac address") { await WakeOnLAN.macAddress(for: arguments[1]) ?? "unknown" })
+await client.shutdown()
 exit(results.allSatisfy { $0 } ? 0 : 1)

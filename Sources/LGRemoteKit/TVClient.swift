@@ -28,10 +28,11 @@ public actor TVClient {
 
     public let host: String
     private let keyStore: KeyStore
-    private let session: URLSession
+    nonisolated private let session: URLSession
     private var socket: URLSessionWebSocketTask?
-    private var pointerSocket: URLSessionWebSocketTask?
+    private var pointerSocket: Task<URLSessionWebSocketTask, Error>?
     private var pending: [String: CheckedContinuation<JSON, Error>] = [:]
+    private var timeouts: [String: Task<Void, Never>] = [:]
     private var nextId = 0
 
     public init(host: String, keyStore: KeyStore) {
@@ -74,10 +75,15 @@ public actor TVClient {
 
     public func disconnect() {
         socket?.cancel(with: .goingAway, reason: nil)
-        pointerSocket?.cancel(with: .goingAway, reason: nil)
         socket = nil
-        pointerSocket = nil
+        dropPointer()
         failAll(TVError.notConnected)
+    }
+
+    /// Disconnects and releases the URL session. The client cannot be used afterwards.
+    public func shutdown() {
+        disconnect()
+        session.invalidateAndCancel()
     }
 
     /// Sends an SSAP request such as `ssap://audio/getVolume` and returns its payload.
@@ -89,14 +95,20 @@ public actor TVClient {
     /// Presses a remote button (UP, DOWN, LEFT, RIGHT, ENTER, BACK, HOME, MENU, ...).
     /// Long presses are not supported by the TV's pointer socket.
     public func press(_ button: String) async throws {
-        let pointer = try await pointer()
-        try await pointer.send(.string("type:button\nname:\(button)\n\n"))
+        let message = URLSessionWebSocketTask.Message.string("type:button\nname:\(button)\n\n")
+        do {
+            try await pointer().send(message)
+        } catch {
+            // The TV closes the pointer socket now and then (e.g. on input changes): reopen once.
+            dropPointer()
+            try await pointer().send(message)
+        }
     }
 
     /// Captures the screen. Protected content (Netflix, HDMI, Live TV) comes back black.
     public func screenshot() async throws -> Data {
         let response = try await request("ssap://tv/executeOneShot")
-        guard let uri = response["imageUri"] as? String, let url = URL(string: uri), url.host == host else {
+        guard let uri = response["imageUri"] as? String, let url = onTVHost(uri) else {
             throw TVError.badResponse("screenshot without an image address")
         }
         let (data, _) = try await session.data(from: url)
@@ -106,22 +118,42 @@ public actor TVClient {
     // MARK: - Socket plumbing
 
     private func pointer() async throws -> URLSessionWebSocketTask {
-        if let pointerSocket { return pointerSocket }
-        let response = try await request("ssap://com.webos.service.networkinput/getPointerInputSocket")
-        guard let path = response["socketPath"] as? String else {
-            throw TVError.badResponse("no pointer socket")
+        if let pointerSocket { return try await pointerSocket.value }
+        // Store the task before awaiting so concurrent presses share one socket.
+        let task = Task { () throws -> URLSessionWebSocketTask in
+            let response = try await self.request("ssap://com.webos.service.networkinput/getPointerInputSocket")
+            // The TV hands out the plain ws:// port; the same path works on the TLS port.
+            guard let path = (response["socketPath"] as? String)?
+                .replacingOccurrences(of: "ws://", with: "wss://")
+                .replacingOccurrences(of: ":3000/", with: ":3001/"),
+                let url = self.onTVHost(path) else {
+                throw TVError.badResponse("no pointer socket")
+            }
+            let socket = self.session.webSocketTask(with: url)
+            socket.resume()
+            return socket
         }
-        // The TV hands out the plain ws:// port; the same path works on the TLS port.
-        let securePath = path
-            .replacingOccurrences(of: "ws://", with: "wss://")
-            .replacingOccurrences(of: ":3000/", with: ":3001/")
-        guard let url = URL(string: securePath), url.host == host else {
-            throw TVError.badResponse("pointer socket on another host")
-        }
-        let task = session.webSocketTask(with: url)
-        task.resume()
         pointerSocket = task
-        return task
+        do {
+            return try await task.value
+        } catch {
+            pointerSocket = nil
+            throw error
+        }
+    }
+
+    private func dropPointer() {
+        guard let pointerSocket else { return }
+        self.pointerSocket = nil
+        Task { try? await pointerSocket.value.cancel(with: .goingAway, reason: nil) }
+    }
+
+    /// The TV reports its own IP in URLs; point them at the configured host so a
+    /// hostname works too and TLS trust stays limited to that host.
+    private func onTVHost(_ string: String) -> URL? {
+        guard var components = URLComponents(string: string) else { return nil }
+        components.host = host
+        return components.url
     }
 
     private func send(type: String, uri: String?, payload: JSON, timeout: TimeInterval) async throws -> JSON {
@@ -142,8 +174,9 @@ public actor TVClient {
                     self.resolve(id, with: .failure(error))
                 }
             }
-            Task {
+            timeouts[id] = Task {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                guard !Task.isCancelled else { return }
                 self.resolve(id, with: .failure(TVError.timeout(uri ?? type)))
             }
         }
@@ -161,8 +194,7 @@ public actor TVClient {
         switch result {
         case .failure(let error):
             socket = nil
-            pointerSocket?.cancel(with: .goingAway, reason: nil)
-            pointerSocket = nil
+            dropPointer()
             failAll(error)
         case .success(let message):
             if case .string(let text) = message { route(text) }
@@ -192,6 +224,7 @@ public actor TVClient {
     }
 
     private func resolve(_ id: String, with result: Result<JSON, Error>) {
+        timeouts.removeValue(forKey: id)?.cancel()
         guard let continuation = pending.removeValue(forKey: id) else { return }
         continuation.resume(with: result)
     }
@@ -199,6 +232,8 @@ public actor TVClient {
     private func failAll(_ error: Error) {
         let waiting = pending
         pending.removeAll()
+        timeouts.values.forEach { $0.cancel() }
+        timeouts.removeAll()
         waiting.values.forEach { $0.resume(throwing: error) }
     }
 }

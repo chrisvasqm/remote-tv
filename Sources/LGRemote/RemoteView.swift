@@ -10,7 +10,7 @@ struct RemoteView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if model.host.isEmpty || showSettings {
+            if showSettings {
                 settings
             } else if model.status == .connected {
                 screen
@@ -27,7 +27,10 @@ struct RemoteView: View {
         }
         .padding(14)
         .frame(width: 360)
-        .onAppear { model.startPolling() }
+        .onAppear {
+            if model.tvHost.isEmpty { showSettings = true }
+            model.startPolling()
+        }
         .onDisappear { model.stopPolling() }
     }
 
@@ -170,7 +173,7 @@ struct RemoteView: View {
             Text("On the TV: Settings > Support > TV information shows the address. Accept the prompt on the TV the first time.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Connect", action: saveSettings).disabled(model.host.isEmpty)
+                Button("Connect", action: saveSettings).disabled(model.tvHost.isEmpty)
                 Button("Forget pairing") { model.forgetPairing() }
             }
         }
@@ -236,7 +239,7 @@ struct RemoteView: View {
         case .networkBlocked:
             return "macOS is blocking LG Remote from the local network. Turn on LG Remote under Privacy & Security > Local Network, then reconnect."
         default:
-            return "Can't reach the TV at \(model.host). It may be off or on another network."
+            return "Can't reach the TV at \(model.tvHost). It may be off or on another network."
         }
     }
 
