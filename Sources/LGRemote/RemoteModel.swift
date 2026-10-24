@@ -15,6 +15,8 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var host: String
     @Published private(set) var status: Status = .idle
     @Published private(set) var screenshot: NSImage?
+    /// Increases with every new frame; the view cross-fades on each change.
+    @Published private(set) var frameNumber = 0
     @Published private(set) var screenIsProtected = false
     @Published private(set) var apps: [TVApp] = []
     @Published private(set) var inputs: [TVInput] = []
@@ -211,6 +213,7 @@ final class RemoteModel: ObservableObject {
                 lastFrame = data
                 blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
                 screenshot = frame.image
+                frameNumber += 1
                 countFrame()
             }
             screenIsProtected = blackFrames >= 5
