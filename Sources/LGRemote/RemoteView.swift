@@ -149,9 +149,13 @@ struct RemoteView: View {
 
     private var offline: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(offlineText).font(.callout)
+            Text(offlineText).font(.callout).fixedSize(horizontal: false, vertical: true)
             HStack {
-                Button("Turn TV on") { model.turnOn() }
+                if model.status == .networkBlocked {
+                    Button("Open Local Network settings") { LocalNetworkAccess.openSettings() }
+                } else {
+                    Button("Turn TV on") { model.turnOn() }
+                }
                 Button("Reconnect") { Task { await model.connect() } }
             }
         }
@@ -221,13 +225,19 @@ struct RemoteView: View {
         case .pairing: return "Accept the prompt on the TV"
         case .connected: return "TV on"
         case .unreachable: return "TV off or unreachable"
+        case .networkBlocked: return "Local Network access needed"
         }
     }
 
     private var offlineText: String {
-        model.status == .pairing
-            ? "The TV is asking to allow this Mac. Accept it with the TV remote."
-            : "Can't reach the TV at \(model.host). It may be off or on another network."
+        switch model.status {
+        case .pairing:
+            return "The TV is asking to allow this Mac. Accept it with the TV remote."
+        case .networkBlocked:
+            return "macOS is blocking LG Remote from the local network. Turn on LG Remote under Privacy & Security > Local Network, then reconnect."
+        default:
+            return "Can't reach the TV at \(model.host). It may be off or on another network."
+        }
     }
 
     private var statusColor: Color {
@@ -235,6 +245,7 @@ struct RemoteView: View {
         case .connected: return .green
         case .connecting, .pairing: return .orange
         case .idle, .unreachable: return .gray
+        case .networkBlocked: return .red
         }
     }
 }

@@ -159,11 +159,11 @@ public actor TVClient {
     private func handle(_ result: Result<URLSessionWebSocketTask.Message, Error>, from task: URLSessionWebSocketTask) {
         guard task === socket else { return }
         switch result {
-        case .failure:
+        case .failure(let error):
             socket = nil
             pointerSocket?.cancel(with: .goingAway, reason: nil)
             pointerSocket = nil
-            failAll(TVError.notConnected)
+            failAll(error)
         case .success(let message):
             if case .string(let text) = message { route(text) }
             listen(task)

@@ -25,6 +25,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key><true/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>LG Remote connects to your TV on the local network to control it.</string>
+    <key>NSBonjourServices</key>
+    <array><string>_lgremote._tcp</string></array>
 </dict>
 </plist>
 PLIST

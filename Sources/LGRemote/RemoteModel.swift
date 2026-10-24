@@ -1,10 +1,13 @@
 import AppKit
 import LGRemoteKit
+import os
+
+private let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
 
 @MainActor
 final class RemoteModel: ObservableObject {
     enum Status: Equatable {
-        case idle, connecting, pairing, connected, unreachable
+        case idle, connecting, pairing, connected, unreachable, networkBlocked
     }
 
     @Published var host: String {
@@ -20,11 +23,13 @@ final class RemoteModel: ObservableObject {
     @Published var lastError: String?
 
     private let keyStore = KeychainKeyStore()
+    private let localNetwork = LocalNetworkAccess()
     private var client: TVClient?
     private var pollTask: Task<Void, Never>?
 
     init() {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
+        localNetwork.requestPrompt()
     }
 
     var foregroundTitle: String {
@@ -53,8 +58,14 @@ final class RemoteModel: ObservableObject {
             inputs = (try? await client.inputs()) ?? []
             await refresh()
         } catch {
-            status = .unreachable
-            lastError = error.localizedDescription
+            log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+            if LocalNetworkAccess.isDenied(error) {
+                status = .networkBlocked
+                lastError = nil
+            } else {
+                status = .unreachable
+                lastError = error.localizedDescription
+            }
         }
     }
 
