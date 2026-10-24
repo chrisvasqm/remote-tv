@@ -97,9 +97,9 @@ struct RemoteView: View {
     private var dpad: some View {
         Grid(horizontalSpacing: 4, verticalSpacing: 4) {
             GridRow {
-                Color.clear.frame(width: 1, height: 1)
+                gap
                 iconButton("chevron.up", "Up") { model.press("UP") }
-                Color.clear.frame(width: 1, height: 1)
+                gap
             }
             GridRow {
                 iconButton("chevron.left", "Left") { model.press("LEFT") }
@@ -109,12 +109,14 @@ struct RemoteView: View {
                 iconButton("chevron.right", "Right") { model.press("RIGHT") }
             }
             GridRow {
-                Color.clear.frame(width: 1, height: 1)
+                gap
                 iconButton("chevron.down", "Down") { model.press("DOWN") }
-                Color.clear.frame(width: 1, height: 1)
+                gap
             }
         }
     }
+
+    private var gap: some View { Color.clear.frame(width: 1, height: 1) }
 
     private var inputMenu: some View {
         Menu {
@@ -131,7 +133,7 @@ struct RemoteView: View {
 
     private var appGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
-            ForEach(model.apps.filter { $0.id != "com.webos.app.discovery" }) { app in
+            ForEach(model.apps) { app in
                 Button { model.launch(app) } label: {
                     Text(app.title).lineLimit(1).frame(maxWidth: .infinity)
                 }
@@ -146,7 +148,7 @@ struct RemoteView: View {
             TextField("Message on the TV", text: $message)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(sendMessage)
-            Button("Send", action: sendMessage).disabled(message.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Send", action: sendMessage).disabled(trimmedMessage.isEmpty)
         }
     }
 
@@ -204,10 +206,11 @@ struct RemoteView: View {
         .help(help)
     }
 
+    private var trimmedMessage: String { message.trimmingCharacters(in: .whitespaces) }
+
     private func sendMessage() {
-        let text = message.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
-        model.showMessage(text)
+        guard !trimmedMessage.isEmpty else { return }
+        model.showMessage(trimmedMessage)
         message = ""
     }
 

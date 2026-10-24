@@ -3,6 +3,11 @@ import Foundation
 public struct TVApp: Identifiable, Hashable, Sendable {
     public let id: String
     public let title: String
+
+    /// The webOS Home screen; reported as the foreground app when nothing else runs.
+    public static let homeId = "com.webos.app.home"
+    /// The "Apps" launcher tile on the Home row.
+    static let launcherId = "com.webos.app.discovery"
 }
 
 public struct TVInput: Identifiable, Hashable, Sendable {
@@ -19,13 +24,14 @@ public struct TVVolume: Sendable {
 /// Typed wrappers for the SSAP endpoints this app uses. Each one was checked
 /// against a webOS 25 TV (10.3.2) before being added.
 public extension TVClient {
-    /// The apps shown on the Home row, in Home order, without hidden ones.
+    /// The apps shown on the Home row, in Home order, without hidden ones
+    /// and without the "Apps" launcher tile.
     func homeApps() async throws -> [TVApp] {
         let response = try await request("ssap://com.webos.applicationManager/listLaunchPoints")
         let points = response["launchPoints"] as? [JSON] ?? []
         return points.compactMap { point in
             guard point["hidden"] as? Bool != true,
-                  let id = point["id"] as? String,
+                  let id = point["id"] as? String, id != TVApp.launcherId,
                   let title = point["title"] as? String else { return nil }
             return TVApp(id: id, title: title)
         }

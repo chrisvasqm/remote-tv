@@ -4,9 +4,11 @@ import Foundation
 /// configured TV address; every other host keeps the system's normal checks.
 final class TVTrustDelegate: NSObject, URLSessionDelegate {
     private let host: String
+    private let port: Int
 
-    init(host: String) {
+    init(host: String, port: Int) {
         self.host = host
+        self.port = port
     }
 
     func urlSession(
@@ -17,7 +19,7 @@ final class TVTrustDelegate: NSObject, URLSessionDelegate {
         let space = challenge.protectionSpace
         guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               space.host == host,
-              space.port == 3001,
+              space.port == port,
               let trust = space.serverTrust else {
             completionHandler(.performDefaultHandling, nil)
             return

@@ -60,8 +60,7 @@ public struct FileKeyStore: KeyStore {
     }
 
     public func setKey(_ key: String, for host: String) {
-        FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600])
-        try? Data(key.utf8).write(to: url)
+        FileManager.default.createFile(atPath: url.path, contents: Data(key.utf8), attributes: [.posixPermissions: 0o600])
     }
 
     public func removeKey(for host: String) {

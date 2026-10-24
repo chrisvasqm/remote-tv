@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import LGRemoteKit
 import os
 
@@ -25,9 +26,10 @@ final class RemoteModel: ObservableObject {
     private let keyStore = KeychainKeyStore()
     private let localNetwork = LocalNetworkAccess()
     private var client: TVClient?
-    private var connectGeneration = 0
+    private var clientHost = ""
     private var pollTask: Task<Void, Never>?
     private var lastFrame: Data?
+    private var refreshSoon = false
 
     init() {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
@@ -39,49 +41,58 @@ final class RemoteModel: ObservableObject {
 
     var foregroundTitle: String {
         guard let id = foregroundAppId else { return "–" }
-        if id == "com.webos.app.home" { return "Home" }
+        if id == TVApp.homeId { return "Home" }
         return apps.first { $0.id == id }?.title ?? id
     }
 
     // MARK: - Connection
 
+    /// Connects, reusing the current client when the address has not changed.
+    /// A result that arrives after the client was replaced is ignored.
     func connect() async {
         let host = tvHost
         guard !host.isEmpty else { return }
-        connectGeneration += 1
-        let generation = connectGeneration
-        await client?.shutdown()
-        let client = TVClient(host: host, keyStore: keyStore)
-        self.client = client
+        let client: TVClient
+        if let current = self.client, clientHost == host {
+            client = current
+        } else {
+            dropClient()
+            client = TVClient(host: host, keyStore: keyStore)
+            await client.setDisconnectHandler { [weak self, weak client] in
+                Task { @MainActor in
+                    if let client { self?.clientDropped(client) }
+                }
+            }
+            self.client = client
+            clientHost = host
+        }
         status = keyStore.key(for: host) == nil ? .pairing : .connecting
         do {
             try await client.connect()
-            guard generation == connectGeneration else { return }
+            guard client === self.client else { return }
             status = .connected
             lastError = nil
-            apps = (try? await client.homeApps()) ?? []
-            inputs = (try? await client.inputs()) ?? []
+            async let apps = client.homeApps()
+            async let inputs = client.inputs()
+            self.apps = (try? await apps) ?? []
+            self.inputs = (try? await inputs) ?? []
             await refreshInfo()
             if let mac = await WakeOnLAN.macAddress(for: host) {
                 UserDefaults.standard.set(mac, forKey: macKey)
             }
         } catch {
-            guard generation == connectGeneration else { return }
+            guard client === self.client else { return }
             log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            if localNetwork.isDenied {
-                status = .networkBlocked
-                lastError = nil
-            } else {
-                status = .unreachable
-                lastError = error.localizedDescription
-            }
+            status = localNetwork.isDenied ? .networkBlocked : .unreachable
+            lastError = localNetwork.isDenied ? nil : error.localizedDescription
         }
     }
 
     /// Live view while the panel is open: about one frame a second, read one
     /// after another so requests never pile up on the TV. Protected screens
-    /// (always black) and app/volume info are only checked every third tick.
-    /// When the TV is unreachable it retries the connection every 10 seconds.
+    /// (always black) and app/volume info are only checked every third tick,
+    /// or on the next tick after an action. When the TV is unreachable it
+    /// retries the connection every 10 seconds.
     func startPolling() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
@@ -89,8 +100,10 @@ final class RemoteModel: ObservableObject {
             while !Task.isCancelled, let self {
                 switch status {
                 case .connected:
-                    if tick % 3 == 0 { await refreshInfo() }
-                    if !screenIsProtected || tick % 3 == 0 { await refreshScreen() }
+                    let due = tick % 3 == 0 || refreshSoon
+                    refreshSoon = false
+                    if due { await refreshInfo() }
+                    if due || !screenIsProtected { await refreshScreen() }
                 case .idle, .unreachable, .networkBlocked:
                     if tick % 10 == 0 {
                         localNetwork.check()
@@ -100,7 +113,7 @@ final class RemoteModel: ObservableObject {
                     break
                 }
                 tick += 1
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }
@@ -113,10 +126,11 @@ final class RemoteModel: ObservableObject {
     private func refreshInfo() async {
         guard let client else { return }
         do {
-            foregroundAppId = try await client.foregroundAppId()
-            volume = try await client.volume()
+            async let app = client.foregroundAppId()
+            async let volume = client.volume()
+            (foregroundAppId, self.volume) = try await (app, volume)
         } catch {
-            await handleRefreshError(error, client)
+            report(error, from: client)
         }
     }
 
@@ -124,19 +138,30 @@ final class RemoteModel: ObservableObject {
         guard let client else { return }
         do {
             let data = try await client.screenshot()
-            guard data != lastFrame, let image = NSImage(data: data) else { return }
+            guard data != lastFrame, let frame = await Frame.decode(data) else { return }
             lastFrame = data
-            screenIsProtected = image.isNearlyBlack
-            screenshot = image
+            screenIsProtected = frame.isNearlyBlack
+            screenshot = frame.image
         } catch {
-            await handleRefreshError(error, client)
+            report(error, from: client)
         }
     }
 
-    private func handleRefreshError(_ error: Error, _ failed: TVClient) async {
+    private func report(_ error: Error, from failed: TVClient) {
         guard failed === client else { return }
-        if await !failed.isConnected { status = .unreachable }
         lastError = error.localizedDescription
+    }
+
+    private func clientDropped(_ dropped: TVClient) {
+        guard dropped === client, status == .connected else { return }
+        status = .unreachable
+    }
+
+    /// Forgets the current client so late results from it are ignored, and closes it.
+    private func dropClient() {
+        guard let old = client else { return }
+        client = nil
+        Task { await old.shutdown() }
     }
 
     private var macKey: String { "tvMac.\(tvHost)" }
@@ -155,13 +180,12 @@ final class RemoteModel: ObservableObject {
     func showMessage(_ text: String) { run { try await $0.showMessage(text) } }
 
     func closeForegroundApp() {
-        guard let id = foregroundAppId, id != "com.webos.app.home" else { return }
+        guard let id = foregroundAppId, id != TVApp.homeId else { return }
         run { try await $0.close(id) }
     }
 
     func turnOff() {
         guard let client else { return }
-        connectGeneration += 1
         self.client = nil
         status = .unreachable
         Task {
@@ -171,6 +195,7 @@ final class RemoteModel: ObservableObject {
         }
     }
 
+    /// Sends the Wake-on-LAN packet; the poll loop reconnects once the TV is up.
     func turnOn() {
         guard let mac = UserDefaults.standard.string(forKey: macKey) else {
             lastError = "Turn the TV on once with the remote so the app can learn its address."
@@ -178,10 +203,6 @@ final class RemoteModel: ObservableObject {
         }
         do {
             try WakeOnLAN.send(mac: mac)
-            Task {
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-                await connect()
-            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -189,10 +210,7 @@ final class RemoteModel: ObservableObject {
 
     func forgetPairing() {
         keyStore.removeKey(for: tvHost)
-        connectGeneration += 1
-        let old = client
-        client = nil
-        Task { await old?.shutdown() }
+        dropClient()
         status = .idle
     }
 
@@ -201,27 +219,40 @@ final class RemoteModel: ObservableObject {
         Task {
             do {
                 try await action(client)
-                try? await Task.sleep(nanoseconds: 700_000_000)
-                await refreshInfo()
-                await refreshScreen()
+                refreshSoon = true
             } catch {
-                lastError = error.localizedDescription
+                report(error, from: client)
             }
         }
     }
 }
 
-private extension NSImage {
+/// A decoded screenshot, scaled down to the panel size off the main thread.
+private struct Frame: @unchecked Sendable {
+    let image: NSImage
+    let isNearlyBlack: Bool
+
+    static func decode(_ data: Data) async -> Frame? {
+        await Task.detached(priority: .utility) {
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                      kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceThumbnailMaxPixelSize: 720,
+                  ] as CFDictionary) else { return nil }
+            let image = NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width, height: thumbnail.height))
+            return Frame(image: image, isNearlyBlack: nearlyBlack(thumbnail))
+        }.value
+    }
+
     /// DRM-protected apps and HDMI inputs capture as a black frame.
-    var isNearlyBlack: Bool {
-        guard let cgImage = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return false }
+    private static func nearlyBlack(_ image: CGImage) -> Bool {
         let width = 16, height = 9
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         guard let context = CGContext(
             data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return false }
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         // Skip the alpha byte of each RGBA pixel.
         return pixels.enumerated().allSatisfy { $0.offset % 4 == 3 || $0.element < 12 }
     }
