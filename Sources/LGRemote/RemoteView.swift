@@ -4,7 +4,8 @@ import SwiftUI
 struct RemoteView: View {
     @ObservedObject var model: RemoteModel
     @State private var message = ""
-    @State private var confirmPowerOff = false
+    /// The first press arms the power key; a second press within a few seconds turns the TV off.
+    @State private var powerArmed = false
     @State private var showSettings = false
     @State private var showMessages = false
     @State private var draftHost = ""
@@ -59,21 +60,43 @@ struct RemoteView: View {
     private var header: some View {
         HStack(spacing: 8) {
             if model.status == .connected {
-                Button { confirmPowerOff = true } label: {
-                    Image(systemName: "power").font(.system(size: 13, weight: .bold))
-                }
-                .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 32, height: 32), fill: Remote.power))
-                .help("Turn the TV off")
-                .accessibilityLabel("Turn the TV off")
-                .confirmationDialog("Turn the TV off?", isPresented: $confirmPowerOff) {
-                    Button("Turn off", role: .destructive) { model.turnOff() }
-                }
+                powerKey
             }
             Circle().fill(statusColor).frame(width: 6, height: 6)
             Text(statusText).font(.callout.weight(.medium)).foregroundStyle(Remote.label)
             Spacer()
             if model.status == .connected { inputMenu }
         }
+    }
+
+    private var powerKey: some View {
+        Button {
+            if powerArmed {
+                powerArmed = false
+                model.turnOff()
+            } else {
+                powerArmed = true
+                Task {
+                    try? await Task.sleep(for: .seconds(3))
+                    powerArmed = false
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "power").font(.system(size: 13, weight: .bold))
+                if powerArmed { Text("Turn off?").font(.callout.weight(.semibold)).fixedSize() }
+            }
+            .padding(.horizontal, powerArmed ? 12 : 0)
+        }
+        .buttonStyle(KeyStyle(
+            shape: powerArmed ? .capsule : .circle,
+            size: CGSize(width: 32, height: 32),
+            fill: powerArmed ? Remote.powerArmed : Remote.power
+        ))
+        .fixedSize()
+        .animation(.spring(duration: 0.25), value: powerArmed)
+        .help(powerArmed ? "Click again to turn the TV off" : "Turn the TV off")
+        .accessibilityLabel(powerArmed ? "Confirm: turn the TV off" : "Turn the TV off")
     }
 
     // MARK: - Live screen
@@ -419,6 +442,7 @@ private enum Remote {
     static let edge = Color.white.opacity(0.08)
     static let label = Color(red: 0.92, green: 0.92, blue: 0.94)
     static let power = Color(red: 0.82, green: 0.15, blue: 0.17)
+    static let powerArmed = Color(red: 0.95, green: 0.25, blue: 0.20)
     static let active = Color.accentColor
 }
 
