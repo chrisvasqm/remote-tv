@@ -27,6 +27,10 @@ final class Nudge {
         resume()
     }
 
+    func clearPending() {
+        pending = false
+    }
+
     private func resume() {
         timer?.cancel()
         timer = nil

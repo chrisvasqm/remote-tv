@@ -93,6 +93,7 @@ final class RemoteModel {
 
     /// Connects on request, re-enabling automatic reconnects.
     func reconnect() {
+        guard !host.isEmpty else { return }
         autoReconnect = true
         connectRequested = true
         nudge.fire()
@@ -123,11 +124,7 @@ final class RemoteModel {
         guard failed === client, status != .connecting, status != .pairing else { return }
         if case TVError.slowDownload = error { return }
         lastError = error.localizedDescription
-        if case TVError.timeout = error {
-            dropClient()
-            if status == .connected { status = .unreachable }
-            return
-        }
+        if case TVError.timeout = error { await failed.disconnect() }
         let stillConnected = await failed.isConnected
         if !stillConnected, failed === client, status == .connected { status = .unreachable }
     }

@@ -52,7 +52,12 @@ extension RemoteModel {
             let live = status == .connected && panelIsVisible && !screenIsProtected && canCapture
             let idle = !panelIsVisible && wake == nil && !connectRequested && screenChanges.isEmpty
             let next = started + (live ? .milliseconds(20) : idle ? .seconds(3600) : .seconds(1))
-            if next > clock.now { await nudge.wait(upTo: next - clock.now) }
+            if next > clock.now {
+                await nudge.wait(upTo: next - clock.now)
+            } else {
+                // This turn already saw what a nudge during it asked for.
+                nudge.clearPending()
+            }
         }
     }
 
@@ -100,9 +105,11 @@ extension RemoteModel {
         } catch {
             guard client === self.client else { return }
             log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            dropClient()
             // A TV's own answer (refused, timed out) can't be macOS blocking the network.
             let denied = error is TVError ? false : await LocalNetworkAccess.isDenied()
+            // Unpair or a new address may have run during that check.
+            guard client === self.client else { return }
+            dropClient()
             status = denied ? .networkBlocked : .unreachable
             lastError = denied ? nil : error.localizedDescription
         }
