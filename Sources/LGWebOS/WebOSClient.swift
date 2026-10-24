@@ -52,7 +52,7 @@ public actor WebOSClient: TV {
         disconnect()
         // A download left from the last session could otherwise trip the mismatch flag again.
         dropPendingFrame()
-        trust.resetMismatch()
+        trust.resetObservations()
         guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
         task.resume()
@@ -116,15 +116,20 @@ public actor WebOSClient: TV {
     /// frame at a time into the same file, so captures can't overlap each other, but a
     /// download can overlap the next capture: about 3 frames a second instead of 2.
     public func nextFrame() async throws -> Data? {
+        // A drop during either await means this live view has ended: return nothing,
+        // not even an error, since nobody is waiting for its frames.
         let drops = frameDrops
-        let url = try await capture()
-        // Dropped while capturing: this frame belongs to a live view that has ended.
-        guard drops == frameDrops else { return nil }
-        let previous = pendingFrame
-        pendingFrame = Task { try await download(url) }
-        let frame = try await previous?.value
-        // Dropped while the previous frame downloaded: that frame is from the ended view too.
-        return drops == frameDrops ? frame : nil
+        do {
+            let url = try await capture()
+            guard drops == frameDrops else { return nil }
+            let previous = pendingFrame
+            pendingFrame = Task { try await download(url) }
+            let frame = try await previous?.value
+            return drops == frameDrops ? frame : nil
+        } catch {
+            if drops != frameDrops { return nil }
+            throw error
+        }
     }
 
     public func dropPendingFrame() {
@@ -256,14 +261,12 @@ public actor WebOSClient: TV {
             resolve(id, with: .failure(error))
             return
         }
-        if payload["returnValue"] as? Bool == false {
-            let reason = payload["errorText"] as? String ?? "request failed"
-            let error: TVError = id.hasPrefix("register_") ? .pairingRejected(reason) : .tv(reason)
-            resolve(id, with: .failure(error))
-            return
-        }
         // Registration first answers "response" (prompt shown), then "registered".
         if id.hasPrefix("register_") && type != "registered" { return }
+        if payload["returnValue"] as? Bool == false {
+            resolve(id, with: .failure(TVError.tv(payload["errorText"] as? String ?? "request failed")))
+            return
+        }
         resolve(id, with: .success(payload))
     }
 

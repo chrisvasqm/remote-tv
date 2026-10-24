@@ -144,10 +144,11 @@ final class RemoteModel {
     /// A timeout means the TV went away without closing the socket (power or Wi-Fi
     /// lost): drop the connection so the poll loop starts reconnecting.
     func report(_ error: Error, from failed: any TV) async {
-        guard failed === client else { return }
+        // A connect in progress owns this client and reports its own result. A slow
+        // frame is skipped; the next one usually arrives, so it isn't worth an error.
+        guard failed === client, status == .connected else { return }
+        if case TVError.slowDownload = error { return }
         lastError = error.localizedDescription
-        // Only a live connection is dropped; a connect in progress owns this client.
-        guard status == .connected else { return }
         if case TVError.timeout = error { await failed.disconnect() }
         let stillConnected = await failed.isConnected
         // Another client may have taken over while this one was disconnecting.
