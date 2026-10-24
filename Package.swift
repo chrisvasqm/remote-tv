@@ -10,5 +10,8 @@ let package = Package(
         // One target per brand, each implementing RemoteTVCore's TV protocol.
         .target(name: "LGWebOS", dependencies: ["RemoteTVCore"]),
         .executableTarget(name: "RemoteTV", dependencies: ["RemoteTVCore", "LGWebOS"]),
+        // Logic that needs no TV or network. Run with `swift test`.
+        .testTarget(name: "RemoteTVCoreTests", dependencies: ["RemoteTVCore"]),
+        .testTarget(name: "LGWebOSTests", dependencies: ["LGWebOS", "RemoteTVCore"]),
     ]
 )
