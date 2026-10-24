@@ -5,6 +5,9 @@ public protocol KeyStore: Sendable {
     func key(for host: String) -> String?
     func setKey(_ key: String, for host: String)
     func removeKey(for host: String)
+    /// The TV certificate's public-key pin, saved at the first pairing.
+    func pin(for host: String) -> String?
+    func setPin(_ pin: String, for host: String)
 }
 
 /// Stores one key file per TV in a directory only the user can read (700, files 600).
@@ -23,25 +26,32 @@ public struct FileKeyStore: KeyStore {
         return FileKeyStore(directory: base.appendingPathComponent("LG Remote", isDirectory: true))
     }
 
-    public func key(for host: String) -> String? {
-        guard let text = try? String(contentsOf: file(host), encoding: .utf8) else { return nil }
-        let key = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return key.isEmpty ? nil : key
+    public func key(for host: String) -> String? { read(file(host, "key")) }
+    public func setKey(_ key: String, for host: String) { write(key, to: file(host, "key")) }
+    public func pin(for host: String) -> String? { read(file(host, "pin")) }
+    public func setPin(_ pin: String, for host: String) { write(pin, to: file(host, "pin")) }
+
+    /// Forgets the pairing: both the key and the certificate pin.
+    public func removeKey(for host: String) {
+        try? FileManager.default.removeItem(at: file(host, "key"))
+        try? FileManager.default.removeItem(at: file(host, "pin"))
     }
 
-    public func setKey(_ key: String, for host: String) {
+    private func read(_ url: URL) -> String? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func write(_ value: String, to url: URL) {
         let manager = FileManager.default
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try? manager.removeItem(at: file(host))
-        manager.createFile(atPath: file(host).path, contents: Data(key.utf8), attributes: [.posixPermissions: 0o600])
+        try? manager.removeItem(at: url)
+        manager.createFile(atPath: url.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600])
     }
 
-    public func removeKey(for host: String) {
-        try? FileManager.default.removeItem(at: file(host))
-    }
-
-    private func file(_ host: String) -> URL {
+    private func file(_ host: String, _ ext: String) -> URL {
         let safeName = host.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "_" }
-        return directory.appendingPathComponent(String(safeName) + ".key")
+        return directory.appendingPathComponent(String(safeName) + "." + ext)
     }
 }

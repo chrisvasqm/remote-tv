@@ -49,7 +49,10 @@ allow access to the local network; allow it.
   could read the key.
 - The app asks the TV only for the permissions it uses (see `Manifest.swift`).
 - The TV's self-signed certificate is trusted only for the configured TV
-  address on port 3001.
+  address on port 3001, and is pinned at the first pairing (SHA-256 of its
+  public key, saved next to the key). A different certificate later is refused
+  before the pairing key is sent. If you reset or replace the TV, unpair and pair again.
+- Requests never follow redirects.
 - To unpair: **Settings > Forget pairing** in the panel. Anyone on your network
   who pairs with the TV (the TV asks first) gets the same control.
 

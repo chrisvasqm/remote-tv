@@ -3,6 +3,7 @@ import Foundation
 public enum TVError: LocalizedError {
     case notConnected
     case invalidAddress(String)
+    case certificateChanged
     case pairingRejected(String)
     case timeout(String)
     case tv(String)
@@ -12,6 +13,8 @@ public enum TVError: LocalizedError {
         switch self {
         case .notConnected: return "Not connected to the TV."
         case .invalidAddress(let host): return "\"\(host)\" is not a valid TV address."
+        case .certificateChanged:
+            return "The TV at this address has a different security certificate than when it was paired. If you reset or replaced the TV, unpair this Mac and pair again."
         case .pairingRejected(let reason): return "The TV refused pairing: \(reason)"
         case .timeout(let what): return "The TV did not answer: \(what)"
         case .tv(let message): return "The TV answered with an error: \(message)"
@@ -34,6 +37,7 @@ public actor TVClient {
     private let host: String
     private let keyStore: KeyStore
     nonisolated private let session: URLSession
+    nonisolated private let trust: TVTrustDelegate
     private var socket: URLSessionWebSocketTask?
     private var pointerSocket: Task<URLSessionWebSocketTask, Error>?
     private var pending: [String: (reply: CheckedContinuation<JSON, Error>, timeout: Task<Void, Never>)] = [:]
@@ -45,9 +49,10 @@ public actor TVClient {
         self.keyStore = keyStore
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
+        self.trust = TVTrustDelegate(host: host, port: Self.port, expectedPin: keyStore.pin(for: host))
         self.session = URLSession(
             configuration: configuration,
-            delegate: TVTrustDelegate(host: host, port: Self.port),
+            delegate: trust,
             delegateQueue: nil
         )
     }
@@ -80,9 +85,10 @@ public actor TVClient {
                 throw TVError.badResponse("registration without a client key")
             }
             if key != storedKey { keyStore.setKey(key, for: host) }
+            if keyStore.pin(for: host) == nil, let pin = trust.observedPin { keyStore.setPin(pin, for: host) }
         } catch {
             disconnect()
-            throw error
+            throw trust.pinMismatch ? TVError.certificateChanged : error
         }
     }
 
