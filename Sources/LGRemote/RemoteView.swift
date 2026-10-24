@@ -434,7 +434,7 @@ struct RemoteView: View {
         case .connecting:
             return "Connecting to the TV at \(model.host)."
         case .networkBlocked:
-            return "macOS blocks LG Remote from your local network. Turn on LG Remote under Privacy & Security > Local Network, then try again."
+            return "macOS blocks RemoteTV from your local network. Turn on RemoteTV under Privacy & Security > Local Network, then try again."
         default:
             return "Can't reach the TV at \(model.host). If it is off, turn it on here. Otherwise check that the Mac and the TV are on the same Wi-Fi."
         }

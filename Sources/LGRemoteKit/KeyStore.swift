@@ -20,10 +20,16 @@ public struct FileKeyStore: KeyStore {
         self.directory = directory
     }
 
-    /// ~/Library/Application Support/LG Remote
+    /// ~/Library/Application Support/RemoteTV. Moves the folder from its name before
+    /// the rename ("LG Remote"), so existing pairings keep working.
     public static var appSupport: FileKeyStore {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return FileKeyStore(directory: base.appendingPathComponent("LG Remote", isDirectory: true))
+        let directory = base.appendingPathComponent("RemoteTV", isDirectory: true)
+        let old = base.appendingPathComponent("LG Remote", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: directory.path) {
+            try? FileManager.default.moveItem(at: old, to: directory)
+        }
+        return FileKeyStore(directory: directory)
     }
 
     public func key(for host: String) -> String? { read(file(host, "key")) }

@@ -4,7 +4,7 @@ enum Manifest {
     static let unsigned: [String: Any] = [
         "manifestVersion": 1,
         "appVersion": "1.0",
-        "deviceName": "LG Remote for Mac",
+        "deviceName": "RemoteTV for Mac",
         // Only what the app uses. Each permission is listed in the TV's pairing prompt.
         "permissions": [
             "LAUNCH", "CLOSE",                                  // open and close apps

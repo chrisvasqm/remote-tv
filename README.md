@@ -1,4 +1,4 @@
-# LG Remote for Mac
+# RemoteTV
 
 A menu-bar remote for LG webOS TVs on the same network. It shows what the TV
 is showing and has the common remote controls:
@@ -19,7 +19,7 @@ Requires macOS 14 or later and the Xcode command-line tools.
 
 ```sh
 scripts/bundle.sh --install
-open "/Applications/LG Remote.app"
+open "/Applications/RemoteTV.app"
 ```
 
 Click the TV icon in the menu bar, enter the TV's IP address
@@ -44,7 +44,7 @@ allow access to the local network; allow it.
 
 ## Security
 
-- The pairing key is stored in `~/Library/Application Support/LG Remote/<tv>.key`
+- The pairing key is stored in `~/Library/Application Support/RemoteTV/<tv>.key`
   (folder 700, file 600). There is no Keychain prompt; any app running as you
   could read the key.
 - The app asks the TV only for the permissions it uses (see `Manifest.swift`).
