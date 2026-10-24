@@ -1,6 +1,7 @@
 import Foundation
 
-/// Where the TV's pairing key (client-key) is kept, per TV address.
+/// Where per-TV data is kept, per TV address: the pairing key (client-key),
+/// the certificate pin and the MAC address for Wake-on-LAN.
 public protocol KeyStore: Sendable {
     func key(for host: String) -> String?
     func setKey(_ key: String, for host: String)
@@ -8,9 +9,12 @@ public protocol KeyStore: Sendable {
     /// The TV certificate's public-key pin, saved at the first pairing.
     func pin(for host: String) -> String?
     func setPin(_ pin: String, for host: String)
+    /// The TV's MAC address, learned after a connect. Kept when the pairing is forgotten.
+    func mac(for host: String) -> String?
+    func setMac(_ mac: String, for host: String)
 }
 
-/// Stores one key file per TV in a directory only the user can read (700, files 600).
+/// Stores one file per TV and value (`<host>.key`, `.pin`, `.mac`) in a directory only the user can read (700, files 600).
 /// No Keychain, so macOS never asks for permission; any process running as the
 /// user can read the key, which is the accepted trade-off.
 public struct FileKeyStore: KeyStore {
@@ -36,8 +40,11 @@ public struct FileKeyStore: KeyStore {
     public func setKey(_ key: String, for host: String) { write(key, to: file(host, "key")) }
     public func pin(for host: String) -> String? { read(file(host, "pin")) }
     public func setPin(_ pin: String, for host: String) { write(pin, to: file(host, "pin")) }
+    public func mac(for host: String) -> String? { read(file(host, "mac")) }
+    public func setMac(_ mac: String, for host: String) { write(mac, to: file(host, "mac")) }
 
-    /// Forgets the pairing: both the key and the certificate pin.
+    /// Forgets the pairing: both the key and the certificate pin. The MAC stays,
+    /// so the TV can still be turned on before it is paired again.
     public func removeKey(for host: String) {
         try? FileManager.default.removeItem(at: file(host, "key"))
         try? FileManager.default.removeItem(at: file(host, "pin"))
@@ -52,8 +59,14 @@ public struct FileKeyStore: KeyStore {
     private func write(_ value: String, to url: URL) {
         let manager = FileManager.default
         try? manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try? manager.removeItem(at: url)
-        manager.createFile(atPath: url.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600])
+        // Write a temporary file, then rename it over the old one, so a crash never leaves no file.
+        let temp = directory.appendingPathComponent("." + url.lastPathComponent + ".tmp")
+        try? manager.removeItem(at: temp)
+        guard manager.createFile(atPath: temp.path, contents: Data(value.utf8), attributes: [.posixPermissions: 0o600]),
+              rename(temp.path, url.path) == 0 else {
+            try? manager.removeItem(at: temp)
+            return
+        }
     }
 
     private func file(_ host: String, _ ext: String) -> URL {

@@ -10,6 +10,8 @@ private struct EmptyKeyStore: KeyStore {
     func removeKey(for host: String) {}
     func pin(for host: String) -> String? { nil }
     func setPin(_ pin: String, for host: String) {}
+    func mac(for host: String) -> String? { nil }
+    func setMac(_ mac: String, for host: String) {}
 }
 
 struct WebOSClientTests {

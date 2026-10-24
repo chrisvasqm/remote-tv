@@ -33,10 +33,22 @@ final class FileKeyStoreTests {
         #expect(store.pin(for: "tv.local") == nil)
     }
 
-    @Test func overwritesAnExistingKey() {
+    @Test func overwritesAnExistingKey() throws {
         store.setKey("old", for: "tv.local")
         store.setKey("new", for: "tv.local")
         #expect(store.key(for: "tv.local") == "new")
+        // The rename leaves no temporary file behind.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["tv.local.key"])
+    }
+
+    @Test func keepsTheMACWhenThePairingIsForgotten() {
+        store.setKey("key", for: "tv.local")
+        store.setMac("aa:bb:cc:dd:ee:ff", for: "tv.local")
+
+        store.removeKey(for: "tv.local")
+
+        #expect(store.key(for: "tv.local") == nil)
+        #expect(store.mac(for: "tv.local") == "aa:bb:cc:dd:ee:ff")
     }
 
     @Test func removeKeyForgetsKeyAndPinOfThatHostOnly() {

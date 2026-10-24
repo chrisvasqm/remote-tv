@@ -47,6 +47,7 @@ final class RemoteModel {
 
     init() {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
+        LegacyMacs.move(to: keyStore)
         Task { _ = await LocalNetworkAccess.isDenied() }
     }
 
@@ -112,9 +113,10 @@ final class RemoteModel {
             self.apps = loadedApps
             self.inputs = loadedInputs
             await refreshInfo()
-            if brand.supports(.wakeOnLAN), UserDefaults.standard.string(forKey: Self.macKey(host)) == nil,
-               let mac = await WakeOnLAN.macAddress(for: host) {
-                UserDefaults.standard.set(mac, forKey: Self.macKey(host))
+            // Learn the MAC on every connect, so a replaced TV or a reused address is picked up.
+            if brand.supports(.wakeOnLAN), let mac = await WakeOnLAN.macAddress(for: host),
+               mac != keyStore.mac(for: host) {
+                keyStore.setMac(mac, for: host)
             }
         } catch {
             guard client === self.client else { return }
@@ -264,8 +266,6 @@ final class RemoteModel {
         Task { await old.shutdown() }
     }
 
-    private static func macKey(_ host: String) -> String { "tvMac.\(host)" }
-
     // MARK: - Actions
 
     func press(_ key: RemoteKey) { run { try await $0.press(key) } }
@@ -319,7 +319,7 @@ final class RemoteModel {
     /// Wakes the TV and keeps trying to connect while it starts, which takes about 10 seconds.
     func turnOn() {
         autoReconnect = true
-        guard let mac = UserDefaults.standard.string(forKey: Self.macKey(host)) else {
+        guard let mac = keyStore.mac(for: host) else {
             lastError = "Turn the TV on once with the remote so the app can learn its address."
             return
         }
