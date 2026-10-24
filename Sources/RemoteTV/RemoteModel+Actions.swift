@@ -21,38 +21,16 @@ extension RemoteModel {
     }
 
     /// Pauses what is playing and turns the picture off, leaving the TV on.
-    func turnScreenOff() {
-        setScreenOff(true) {
-            try? await $0.pause()
-            try await $0.setScreen(on: false)
-        }
-    }
+    func turnScreenOff() { setScreenOff(true) }
 
-    func turnScreenOn() {
-        setScreenOff(false) { try await $0.setScreen(on: true) }
-    }
+    func turnScreenOn() { setScreenOff(false) }
 
-    /// Shows the new screen state at once, and puts the old one back if the TV refuses,
-    /// unless a newer screen change started meanwhile.
-    private func setScreenOff(_ off: Bool, _ action: @escaping (any TV) async throws -> Void) {
-        guard let client else { return }
-        let previous = screenIsOff
+    /// Shows the new screen state at once; the driver sends it to the TV in order.
+    private func setScreenOff(_ off: Bool) {
+        guard client != nil else { return }
+        screenChanges.append(ScreenChange(off: off, previous: screenIsOff))
         screenIsOff = off
-        screenRequestsStarted += 1
-        screenRequestsRunning += 1
-        let request = screenRequestsStarted
-        Task {
-            defer { screenRequestsRunning -= 1 }
-            do {
-                try await action(client)
-                guard client === self.client else { return }
-                refreshSoon = true
-                lastError = nil
-            } catch {
-                if client === self.client, screenRequestsStarted == request { screenIsOff = previous }
-                await report(error, from: client)
-            }
-        }
+        nudge.fire()
     }
 
     /// Runs an action on the current client. `onSuccess` runs only if that client is still

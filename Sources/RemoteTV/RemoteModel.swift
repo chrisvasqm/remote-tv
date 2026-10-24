@@ -2,8 +2,13 @@ import AppKit
 import RemoteTVCore
 import os
 
-private let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
+let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
 
+/// The app's state and the user's intents. One loop (`RemoteModel+Driver`) owns all
+/// talking to the TV in the background: connecting, waking, the live view and screen
+/// changes run in turn there, so they never race each other. Key presses and other
+/// quick actions go straight to the TV, so they never wait behind a frame.
+///
 /// Observed per property, so a new frame redraws the preview and not the whole panel.
 @MainActor
 @Observable
@@ -17,39 +22,35 @@ final class RemoteModel {
     var status: Status = .idle
     var screenshot: NSImage?
     var screenIsProtected = false
-    private(set) var apps: [TVApp] = []
-    private(set) var inputs: [TVInput] = []
+    var apps: [TVApp] = []
+    var inputs: [TVInput] = []
     var foregroundAppId: String?
     var volume: TVVolume?
     /// The picture is off but the TV is on (see `turnScreenOff`).
     var screenIsOff = false
     var lastError: String?
-    /// True while the app sends Wake-on-LAN packets and waits for the TV to start.
-    var isWaking = false
     /// The last message the TV accepted, for a short confirmation in the panel.
     var lastMessageSent: String?
-
-    let keyStore = FileKeyStore.appSupport
-    var client: (any TV)?
-    /// The address a connect is running for; a connect to another address replaces it.
-    private var connectingHost: String?
-    /// Counts connects, so a finished connect clears `connectingHost` only if no newer one began.
-    private var connectAttempt = 0
-    /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
-    var autoReconnect = true
-    var blackFrames = 0
-    var frameTimes: [ContinuousClock.Instant] = []
     /// Frames shown per second over the last few seconds.
     var framesPerSecond: Double?
-    private var clientHost = ""
-    var pollTask: Task<Void, Never>?
-    /// Poll loops that were cancelled but may still be finishing a request.
-    var endingPolls = 0
-    var wakeTask: Task<Void, Never>?
-    /// Counts screen off/on requests. A screen state read while one ran, or one started,
-    /// may be stale, so `refreshInfo` drops it.
-    var screenRequestsStarted = 0
-    var screenRequestsRunning = 0
+    /// Set while the app sends Wake-on-LAN packets and waits for the TV to start.
+    var wake: WakePlan?
+
+    let keyStore = FileKeyStore.appSupport
+    /// The connection to the TV. Each connect makes a new one, so a result from an
+    /// older one is recognised by identity (`client === self.client`) and ignored.
+    var client: (any TV)?
+    /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
+    var autoReconnect = true
+    /// The user asked to connect now (Connect, Try again), even with the panel closed.
+    var connectRequested = false
+    var panelIsVisible = false
+    /// Screen off/on changes waiting for the driver, oldest first.
+    var screenChanges: [ScreenChange] = []
+    /// Wakes the driver early when an intent needs it.
+    let nudge = Nudge()
+    var blackFrames = 0
+    var frameTimes: [ContinuousClock.Instant] = []
     var lastFrame: Data?
     var refreshSoon = false
 
@@ -57,24 +58,11 @@ final class RemoteModel {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
         LegacyMacs.move(to: keyStore)
         Task { _ = await LocalNetworkAccess.isDenied() }
+        // Runs for the app's lifetime; the model is never released.
+        Task { await drive() }
     }
 
-    func setHost(_ newHost: String) async {
-        let trimmed = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        // Saving the same address must not drop a working connection.
-        if trimmed == host && status == .connected { return }
-        if trimmed != host { stopWaking() }
-        host = trimmed
-        UserDefaults.standard.set(host, forKey: "tvHost")
-        await reconnect()
-    }
-
-    /// Connects on request, re-enabling automatic reconnects.
-    func reconnect() async {
-        autoReconnect = true
-        await connect()
-    }
+    var isWaking: Bool { wake != nil }
 
     var isHome: Bool { foregroundAppId == nil || foregroundAppId == brand.homeAppId }
 
@@ -87,71 +75,61 @@ final class RemoteModel {
         return apps.first { $0.id == id }?.title ?? id
     }
 
-    // MARK: - Connection
+    // MARK: - Intents
 
-    /// Connects, reusing the current client when the address has not changed.
-    /// A result that arrives after the client was replaced is ignored.
-    func connect() async {
-        let host = host
-        guard !host.isEmpty, connectingHost != host else { return }
-        connectingHost = host
-        connectAttempt += 1
-        let attempt = connectAttempt
-        defer { if connectAttempt == attempt { connectingHost = nil } }
-        let client: any TV
-        if let current = self.client, clientHost == host {
-            client = current
-        } else {
+    func setHost(_ newHost: String) {
+        let trimmed = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        // Saving the same address must not drop a working connection.
+        if trimmed == host && status == .connected { return }
+        if trimmed != host {
+            wake = nil
+            // Ends a connect to the old address at once, instead of after its timeout.
             dropClient()
+            status = .idle
             resetTVState()
-            client = brand.makeTV(host: host, keyStore: keyStore)
-            await client.setDisconnectHandler { [weak self, weak client] in
-                Task { @MainActor in
-                    if let client { self?.clientDropped(client) }
-                }
-            }
-            self.client = client
-            clientHost = host
         }
-        status = keyStore.key(for: host) == nil ? .pairing : .connecting
-        do {
-            try await client.connect()
-            guard client === self.client else { return }
-            status = .connected
-            lastError = nil
-            async let apps = client.apps()
-            async let inputs = client.inputs()
-            let (loadedApps, loadedInputs) = ((try? await apps) ?? [], (try? await inputs) ?? [])
-            guard client === self.client else { return }
-            self.apps = loadedApps
-            self.inputs = loadedInputs
-            await refreshInfo()
-            // Learn the MAC on every connect, so a replaced TV or a reused address is picked up.
-            if brand.supports(.wakeOnLAN), let mac = await WakeOnLAN.macAddress(for: host),
-               mac != keyStore.mac(for: host) {
-                keyStore.setMac(mac, for: host)
-            }
-        } catch {
-            guard client === self.client else { return }
-            log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            // A TV's own answer (refused, timed out) can't be macOS blocking the network.
-            let denied = error is TVError ? false : await LocalNetworkAccess.isDenied()
-            status = denied ? .networkBlocked : .unreachable
-            lastError = denied ? nil : error.localizedDescription
-        }
+        host = trimmed
+        UserDefaults.standard.set(host, forKey: "tvHost")
+        reconnect()
     }
 
+    /// Connects on request, re-enabling automatic reconnects.
+    func reconnect() {
+        autoReconnect = true
+        connectRequested = true
+        nudge.fire()
+    }
+
+    func panelVisibilityChanged(_ visible: Bool) {
+        panelIsVisible = visible
+        nudge.fire()
+    }
+
+    func forgetPairing() {
+        wake = nil
+        keyStore.removeKey(for: host)
+        dropClient()
+        autoReconnect = false
+        status = .idle
+        resetTVState()
+    }
+
+    // MARK: - Shared helpers
+
     /// A timeout means the TV went away without closing the socket (power or Wi-Fi
-    /// lost): drop the connection so the poll loop starts reconnecting.
+    /// lost): drop the connection so the driver reconnects.
     func report(_ error: Error, from failed: any TV) async {
-        // A connect in progress owns this client and reports its own result. A slow
-        // frame is skipped; the next one usually arrives, so it isn't worth an error.
-        guard failed === client, status != .connecting, status != .pairing else { return }
+        // A slow frame is skipped; the next one usually arrives, so it isn't worth an error.
+        guard failed === client else { return }
         if case TVError.slowDownload = error { return }
         lastError = error.localizedDescription
-        if case TVError.timeout = error, status == .connected { await failed.disconnect() }
+        if case TVError.timeout = error {
+            dropClient()
+            if status == .connected { status = .unreachable }
+            return
+        }
         let stillConnected = await failed.isConnected
-        // Another client may have taken over while this one was disconnecting.
         if !stillConnected, failed === client, status == .connected { status = .unreachable }
     }
 
@@ -167,10 +145,11 @@ final class RemoteModel {
         foregroundAppId = nil
         volume = nil
         screenIsOff = false
+        screenChanges = []
         lastMessageSent = nil
     }
 
-    private func clientDropped(_ dropped: any TV) {
+    func clientDropped(_ dropped: any TV) {
         guard dropped === client, status == .connected else { return }
         status = .unreachable
     }
@@ -180,15 +159,5 @@ final class RemoteModel {
         guard let old = client else { return }
         client = nil
         Task { await old.shutdown() }
-    }
-
-    func forgetPairing() {
-        stopWaking()
-        keyStore.removeKey(for: clientHost.isEmpty ? host : clientHost)
-        dropClient()
-        clientHost = ""
-        autoReconnect = false
-        status = .idle
-        resetTVState()
     }
 }

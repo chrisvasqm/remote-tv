@@ -23,8 +23,6 @@ public actor WebOSClient: TV {
     private var onDisconnect: (@Sendable () -> Void)?
     /// The live view's previous capture, downloading while the TV captures the next.
     private var pendingFrame: Task<Data, Error>?
-    /// Counts `dropPendingFrame` calls, so a capture that was dropped midway is discarded.
-    private var frameDrops = 0
 
     public init(host: String, keyStore: KeyStore) {
         self.host = host
@@ -116,24 +114,13 @@ public actor WebOSClient: TV {
     /// frame at a time into the same file, so captures can't overlap each other, but a
     /// download can overlap the next capture: about 3 frames a second instead of 2.
     public func nextFrame() async throws -> Data? {
-        // A drop during either await means this live view has ended: return nothing,
-        // not even an error, since nobody is waiting for its frames.
-        let drops = frameDrops
-        do {
-            let url = try await capture()
-            guard drops == frameDrops else { return nil }
-            let previous = pendingFrame
-            pendingFrame = Task { try await download(url) }
-            let frame = try await previous?.value
-            return drops == frameDrops ? frame : nil
-        } catch {
-            if drops != frameDrops { return nil }
-            throw error
-        }
+        let url = try await capture()
+        let previous = pendingFrame
+        pendingFrame = Task { try await download(url) }
+        return try await previous?.value
     }
 
     public func dropPendingFrame() {
-        frameDrops += 1
         pendingFrame?.cancel()
         pendingFrame = nil
     }

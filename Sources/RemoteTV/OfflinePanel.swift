@@ -27,7 +27,7 @@ struct OfflinePanel: View {
     }
 
     private func reconnect() {
-        Task { await model.reconnect() }
+        model.reconnect()
     }
 
     private var text: String {

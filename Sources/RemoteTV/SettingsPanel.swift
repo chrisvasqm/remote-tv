@@ -28,6 +28,6 @@ struct SettingsPanel: View {
 
     private func save() {
         isShown = false
-        Task { await model.setHost(draftHost) }
+        model.setHost(draftHost)
     }
 }

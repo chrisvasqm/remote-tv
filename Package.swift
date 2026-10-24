@@ -13,5 +13,6 @@ let package = Package(
         // Logic that needs no TV or network. Run with `swift test`.
         .testTarget(name: "RemoteTVCoreTests", dependencies: ["RemoteTVCore"]),
         .testTarget(name: "LGWebOSTests", dependencies: ["LGWebOS", "RemoteTVCore"]),
+        .testTarget(name: "RemoteTVTests", dependencies: ["RemoteTV"]),
     ]
 )
