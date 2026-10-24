@@ -8,7 +8,6 @@ struct RemoteView: View {
     @State private var showSettings = false
     @State private var draftHost = ""
     @FocusState private var remoteFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let panelWidth: CGFloat = 440
     private static let padding: CGFloat = 16
@@ -76,15 +75,8 @@ struct RemoteView: View {
         Color.black
             .frame(width: Self.previewWidth, height: Self.previewWidth * 9 / 16)
             .overlay {
-                // Each frame fades in over the previous one, which stays opaque underneath,
-                // so ~3 captures a second read as motion without dimming mid-fade.
-                if let image = model.previousScreenshot {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                }
                 if let image = model.screenshot {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                        .id(model.frameNumber)
-                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
                 if model.screenshot == nil || model.screenIsProtected {
                     Label(
@@ -94,7 +86,6 @@ struct RemoteView: View {
                     .font(.callout).foregroundStyle(.white.opacity(0.75))
                 }
             }
-            .animation(crossFade, value: model.frameNumber)
             .overlay(alignment: .bottomLeading) {
                 HStack(spacing: 6) {
                     Circle().fill(.red).frame(width: 6, height: 6)
@@ -318,13 +309,6 @@ struct RemoteView: View {
         }
         .help(help)
         .accessibilityLabel(help)
-    }
-
-    /// Fade length matches the measured frame interval (0.15–0.5 s); off with Reduce Motion
-    /// and in the 1 fps mode, where a fade would only blur the jumps.
-    private var crossFade: Animation? {
-        guard !reduceMotion, let fps = model.framesPerSecond, fps > 0 else { return nil }
-        return .linear(duration: min(max(1 / fps, 0.15), 0.5))
     }
 
     private var trimmedMessage: String { message.trimmingCharacters(in: .whitespaces) }
