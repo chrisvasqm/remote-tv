@@ -149,33 +149,36 @@ extension RemoteModel {
 
     // MARK: - Screen changes
 
-    /// Applies the user's screen off/on changes in order. If any was refused or skipped,
-    /// the panel ends on the last state the TV accepted, not on a refused one.
+    /// Applies the user's screen off/on changes in order. If any was refused, the panel
+    /// ends on the last state the TV accepted, not on a refused one.
     private func applyScreenChanges() async {
-        guard let first = screenChanges.first else { return }
-        let owner = client
-        var accepted = first.previous
+        guard !screenChanges.isEmpty else { return }
+        guard let owner = client else {
+            screenChanges = []
+            screenBeforeChanges = nil
+            return
+        }
+        var accepted = screenBeforeChanges ?? screenIsOff
         var anyFailed = false
-        while !screenChanges.isEmpty {
-            let change = screenChanges.removeFirst()
-            guard let client else {
-                anyFailed = true
-                continue
-            }
+        while !screenChanges.isEmpty, client === owner {
+            let off = screenChanges.removeFirst()
             do {
-                if change.off { try? await client.pause() }
-                try await client.setScreen(on: !change.off)
-                accepted = change.off
-                guard client === self.client else { continue }
+                if off { try? await owner.pause() }
+                try await owner.setScreen(on: !off)
+                accepted = off
+                guard owner === client else { continue }
                 refreshSoon = true
                 lastError = nil
             } catch {
                 anyFailed = true
-                await report(error, from: client)
+                await report(error, from: owner)
             }
         }
-        // After Turn off or a new address, the state was reset; leave it alone.
-        if anyFailed, owner === client { screenIsOff = accepted }
+        // After Turn off or a new address the state was reset; changes queued since then
+        // belong to the new client and wait for the next turn.
+        guard owner === client else { return }
+        if anyFailed { screenIsOff = accepted }
+        screenBeforeChanges = nil
     }
 
     // MARK: - Live view

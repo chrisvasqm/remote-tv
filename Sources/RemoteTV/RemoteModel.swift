@@ -42,8 +42,11 @@ final class RemoteModel {
     /// The user asked to connect now (Connect, Try again), even with the panel closed.
     var connectRequested = false
     var panelIsVisible = false
-    /// Screen off/on changes waiting for the driver, oldest first.
-    var screenChanges: [ScreenChange] = []
+    /// Screen off/on changes waiting for the driver, oldest first (`true` = off).
+    var screenChanges: [Bool] = []
+    /// The screen state before the waiting changes, put back if the TV refuses them all.
+    /// Set by the first change and cleared when the driver has sent them all.
+    var screenBeforeChanges: Bool?
     /// Wakes the driver early when an intent needs it.
     let nudge = Nudge()
     var blackFrames = 0
@@ -142,6 +145,7 @@ final class RemoteModel {
         volume = nil
         screenIsOff = false
         screenChanges = []
+        screenBeforeChanges = nil
         lastMessageSent = nil
     }
 
