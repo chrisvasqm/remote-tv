@@ -1,6 +1,6 @@
 #!/bin/sh
 # Builds "RemoteTV.app" into build/ and signs it ad hoc.
-# Usage: scripts/bundle.sh [--install]   (--install copies it to /Applications)
+# Usage: scripts/bundle.sh [--install]   (--install moves it to /Applications)
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -38,6 +38,7 @@ echo "Built $APP"
 if [ "${1:-}" = "--install" ]; then
     # "LG Remote.app" is the name before the rename.
     rm -rf "/Applications/LG Remote.app" "/Applications/RemoteTV.app"
-    cp -R "$APP" /Applications/
+    # Move rather than copy, so Spotlight finds one RemoteTV, not a second one in build/.
+    mv "$APP" /Applications/
     echo "Installed /Applications/RemoteTV.app"
 fi

@@ -81,4 +81,14 @@ public extension TVClient {
     }
 
     func turnOff() async throws { try await request("ssap://system/turnOff") }
+
+    /// Turns only the picture off or back on. The TV stays on and connected, so it
+    /// wakes instantly and never needs Wake-on-LAN.
+    func setScreen(on: Bool) async throws {
+        try await request("ssap://com.webos.service.tvpower/power/\(on ? "turnOnScreen" : "turnOffScreen")", ["standbyMode": "active"])
+    }
+
+    func screenIsOff() async throws -> Bool {
+        try await request("ssap://com.webos.service.tvpower/power/getPowerState")["state"] as? String == "Screen Off"
+    }
 }

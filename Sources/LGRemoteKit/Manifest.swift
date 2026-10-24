@@ -16,7 +16,7 @@ enum Manifest {
             "CONTROL_INPUT_JOYSTICK", "CONTROL_MOUSE_AND_KEYBOARD", // arrow keys, OK, Back, Home
             "CONTROL_TV_SCREEN", "CONTROL_DISPLAY",             // screenshot
             "WRITE_NOTIFICATION_TOAST",                         // messages on screen
-            "CONTROL_POWER",                                    // turn off
+            "CONTROL_POWER",                                    // turn off, screen off and on
         ],
     ]
 }

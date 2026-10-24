@@ -20,6 +20,8 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var inputs: [TVInput] = []
     @Published private(set) var foregroundAppId: String?
     @Published private(set) var volume: TVVolume?
+    /// The picture is off but the TV is on (see `turnScreenOff`).
+    @Published private(set) var screenIsOff = false
     @Published var lastError: String?
     /// True while the app sends Wake-on-LAN packets and waits for the TV to start.
     @Published private(set) var isWaking = false
@@ -174,9 +176,12 @@ final class RemoteModel: ObservableObject {
         do {
             async let app = client.foregroundAppId()
             async let volume = client.volume()
+            async let screenOff = try? client.screenIsOff()
             let (appId, level) = try await (app, volume)
+            let off = await screenOff
             guard client === self.client else { return }
             (foregroundAppId, self.volume) = (appId, level)
+            if let off { screenIsOff = off }
         } catch {
             await report(error, from: client)
         }
@@ -282,6 +287,20 @@ final class RemoteModel: ObservableObject {
     func closeForegroundApp() {
         guard let id = foregroundAppId, id != TVApp.homeId else { return }
         run { try await $0.close(id) }
+    }
+
+    /// Pauses what is playing and turns the picture off, leaving the TV on.
+    func turnScreenOff() {
+        screenIsOff = true
+        run {
+            try? await $0.pause()
+            try await $0.setScreen(on: false)
+        }
+    }
+
+    func turnScreenOn() {
+        screenIsOff = false
+        run { try await $0.setScreen(on: true) }
     }
 
     func turnOff() {

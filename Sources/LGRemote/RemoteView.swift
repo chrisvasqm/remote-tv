@@ -56,6 +56,7 @@ struct RemoteView: View {
         HStack(spacing: 8) {
             if model.status == .connected {
                 powerKey
+                screenKey
             }
             Circle().fill(statusColor).frame(width: 6, height: 6)
             Text(statusText).font(.caption.weight(.medium)).foregroundStyle(Remote.label)
@@ -94,6 +95,18 @@ struct RemoteView: View {
         .accessibilityLabel(powerArmed ? "Confirm: turn the TV off" : "Turn the TV off")
     }
 
+    /// Turns only the picture off (and back on), so the TV never has to be woken.
+    private var screenKey: some View {
+        Button {
+            model.screenIsOff ? model.turnScreenOn() : model.turnScreenOff()
+        } label: {
+            Image(systemName: model.screenIsOff ? "sun.max.fill" : "moon.fill").font(.system(size: 11, weight: .bold))
+        }
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 26, height: 26), fill: Remote.key))
+        .help(model.screenIsOff ? "Turn the screen on" : "Pause and turn the screen off (the TV stays on)")
+        .accessibilityLabel(model.screenIsOff ? "Turn the screen on" : "Turn the screen off")
+    }
+
     // MARK: - Live screen
 
     private var screen: some View {
@@ -103,7 +116,16 @@ struct RemoteView: View {
                 if let image = model.screenshot {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                 }
-                if model.screenshot == nil || model.screenIsProtected {
+                if model.screenIsOff {
+                    VStack(spacing: 8) {
+                        Label("The screen is off", systemImage: "moon.fill")
+                            .font(.callout).foregroundStyle(.white.opacity(0.75))
+                        Button("Turn the screen on") { model.turnScreenOn() }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black)
+                } else if model.screenshot == nil || model.screenIsProtected {
                     Label(
                         model.screenIsProtected ? "This app or input hides its picture" : "Loading the screen…",
                         systemImage: model.screenIsProtected ? "eye.slash" : "tv"
