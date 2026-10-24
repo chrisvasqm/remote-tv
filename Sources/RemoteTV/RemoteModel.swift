@@ -1,8 +1,5 @@
 import AppKit
 import RemoteTVCore
-import os
-
-let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
 
 /// The app's state and the user's intents. One loop (`RemoteModel+Driver`) owns all
 /// talking to the TV in the background: connecting, waking, the live view and screen
@@ -108,6 +105,7 @@ final class RemoteModel {
 
     func forgetPairing() {
         wake = nil
+        connectRequested = false
         keyStore.removeKey(for: host)
         dropClient()
         autoReconnect = false
@@ -120,8 +118,9 @@ final class RemoteModel {
     /// A timeout means the TV went away without closing the socket (power or Wi-Fi
     /// lost): drop the connection so the driver reconnects.
     func report(_ error: Error, from failed: any TV) async {
-        // A slow frame is skipped; the next one usually arrives, so it isn't worth an error.
-        guard failed === client else { return }
+        // A connect in progress owns its client and reports its own result. A slow
+        // frame is skipped; the next one usually arrives, so it isn't worth an error.
+        guard failed === client, status != .connecting, status != .pairing else { return }
         if case TVError.slowDownload = error { return }
         lastError = error.localizedDescription
         if case TVError.timeout = error {

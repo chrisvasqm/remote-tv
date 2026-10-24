@@ -1,5 +1,8 @@
 import Foundation
 import RemoteTVCore
+import os
+
+private let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
 
 extension RemoteModel {
     /// The one loop that talks to the TV in the background, for the app's lifetime.
@@ -60,7 +63,7 @@ extension RemoteModel {
 
     /// Connects with a new client. A result that arrives after the client was replaced
     /// (another address, Turn off, Forget pairing) is ignored.
-    func connect() async {
+    private func connect() async {
         let host = host
         dropClient()
         resetTVState()
@@ -77,6 +80,7 @@ extension RemoteModel {
             guard client === self.client else { return }
             status = .connected
             lastError = nil
+            connectRequested = false
             async let apps = client.apps()
             async let inputs = client.inputs()
             let (loadedApps, loadedInputs) = ((try? await apps) ?? [], (try? await inputs) ?? [])
@@ -132,29 +136,36 @@ extension RemoteModel {
 
     // MARK: - Screen changes
 
-    /// Applies the user's screen off/on changes in order. A refused change puts the old
-    /// state back only if no newer change is waiting, since that one's state is shown.
+    /// Applies the user's screen off/on changes in order. If any was refused or skipped,
+    /// the panel ends on the last state the TV accepted, not on a refused one.
     private func applyScreenChanges() async {
+        guard let first = screenChanges.first else { return }
+        var accepted = first.previous
+        var anyFailed = false
         while !screenChanges.isEmpty {
             let change = screenChanges.removeFirst()
-            guard let client else { continue }
+            guard let client else {
+                anyFailed = true
+                continue
+            }
             do {
                 if change.off { try? await client.pause() }
                 try await client.setScreen(on: !change.off)
+                accepted = change.off
                 guard client === self.client else { continue }
                 refreshSoon = true
                 lastError = nil
             } catch {
-                guard client === self.client else { continue }
-                if screenChanges.isEmpty { screenIsOff = change.previous }
+                anyFailed = true
                 await report(error, from: client)
             }
         }
+        if anyFailed { screenIsOff = accepted }
     }
 
     // MARK: - Live view
 
-    func refreshInfo() async {
+    private func refreshInfo() async {
         guard let client else { return }
         do {
             async let app = client.foregroundAppId()

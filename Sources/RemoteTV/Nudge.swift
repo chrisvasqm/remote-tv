@@ -2,6 +2,7 @@
 @MainActor
 final class Nudge {
     private var waiter: CheckedContinuation<Void, Never>?
+    private var timer: Task<Void, Never>?
     /// A `fire()` while the driver was busy, so its next wait returns at once.
     private var pending = false
 
@@ -13,9 +14,9 @@ final class Nudge {
         }
         await withCheckedContinuation { continuation in
             waiter = continuation
-            // A timer from an earlier wait may end this one early; the driver just loops again.
-            Task {
+            timer = Task {
                 try? await Task.sleep(for: limit)
+                guard !Task.isCancelled else { return }
                 resume()
             }
         }
@@ -27,6 +28,8 @@ final class Nudge {
     }
 
     private func resume() {
+        timer?.cancel()
+        timer = nil
         waiter?.resume()
         waiter = nil
     }
