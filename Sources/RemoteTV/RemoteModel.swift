@@ -41,6 +41,11 @@ final class RemoteModel {
     var framesPerSecond: Double?
     private var clientHost = ""
     var pollTask: Task<Void, Never>?
+    /// A poll loop that was cancelled but may still be finishing a request.
+    var stoppingPoll: Task<Void, Never>?
+    var wakeTask: Task<Void, Never>?
+    /// True while a screen off/on request runs, so a poll started earlier can't undo it.
+    var screenChangeInFlight = false
     var lastFrame: Data?
     var refreshSoon = false
 

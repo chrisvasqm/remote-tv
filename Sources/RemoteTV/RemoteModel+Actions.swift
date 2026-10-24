@@ -12,10 +12,7 @@ extension RemoteModel {
     func volumeDown() { run { try await $0.volumeDown() } }
     func toggleMute() { run { [muted = volume?.muted ?? false] in try await $0.setMute(!muted) } }
     func showMessage(_ text: String) {
-        run { [weak self] client in
-            try await client.showMessage(text)
-            await MainActor.run { self?.lastMessageSent = text }
-        }
+        run({ try await $0.showMessage(text) }, onSuccess: { $0.lastMessageSent = text })
     }
 
     func closeForegroundApp() {
@@ -35,23 +32,31 @@ extension RemoteModel {
         setScreenOff(false) { try await $0.setScreen(on: true) }
     }
 
-    /// Shows the new screen state at once, and puts it back if the TV refuses.
+    /// Shows the new screen state at once, and puts the old one back if the TV refuses.
     private func setScreenOff(_ off: Bool, _ action: @escaping (any TV) async throws -> Void) {
         guard client != nil else { return }
+        let previous = screenIsOff
         screenIsOff = off
-        run(action, onFailure: { $0.screenIsOff = !off })
+        screenChangeInFlight = true
+        run(action, onSuccess: { $0.screenChangeInFlight = false }, onFailure: {
+            $0.screenChangeInFlight = false
+            if $0.screenIsOff == off { $0.screenIsOff = previous }
+        })
     }
 
+    /// Runs an action on the current client. The callbacks run only if that client is
+    /// still the current one; a result from a replaced client says nothing about the new one.
     private func run(
         _ action: @escaping (any TV) async throws -> Void,
+        onSuccess: ((RemoteModel) -> Void)? = nil,
         onFailure: ((RemoteModel) -> Void)? = nil
     ) {
         guard let client else { return }
         Task {
             do {
                 try await action(client)
-                // A result from a client that was replaced meanwhile says nothing about the new one.
                 guard client === self.client else { return }
+                onSuccess?(self)
                 refreshSoon = true
                 lastError = nil
             } catch {
