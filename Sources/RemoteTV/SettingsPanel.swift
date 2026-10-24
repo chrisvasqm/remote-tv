@@ -5,7 +5,7 @@ import SwiftUI
 struct SettingsPanel: View {
     let model: RemoteModel
     @Binding var isShown: Bool
-    @State private var draftHost = ""
+    @Binding var draftHost: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -24,11 +24,6 @@ struct SettingsPanel: View {
                     .help("Remove the saved pairing. The TV asks again next time.")
             }
         }
-        .onAppear(perform: loadHost)
-    }
-
-    private func loadHost() {
-        draftHost = model.host
     }
 
     private func save() {

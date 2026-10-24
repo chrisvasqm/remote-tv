@@ -1,22 +1,20 @@
 import SwiftUI
 
-/// A small round key, such as Home or Play. The title is the tooltip and the VoiceOver label.
+/// A round key with a symbol, such as Home, Play or a wheel arrow. The title is the
+/// VoiceOver label and, unless `help` is given, the tooltip. Callers set the symbol's font.
 struct RoundKey: View {
     let title: String
     let symbol: String
+    var size: CGFloat = 30
+    /// Nil for keys drawn on another key's surface, such as the wheel's arrows.
+    var fill: Color? = RemotePalette.key
+    var help: String?
     let action: () -> Void
-
-    init(_ title: String, symbol: String, action: @escaping () -> Void) {
-        self.title = title
-        self.symbol = symbol
-        self.action = action
-    }
 
     var body: some View {
         Button(title, systemImage: symbol, action: action)
             .labelStyle(.iconOnly)
-            .font(.system(size: 12, weight: .semibold))
-            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 30, height: 30), fill: RemotePalette.key))
-            .help(title)
+            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: size, height: size), fill: fill))
+            .help(help ?? title)
     }
 }

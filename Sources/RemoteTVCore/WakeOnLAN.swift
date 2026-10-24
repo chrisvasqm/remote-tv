@@ -88,7 +88,8 @@ public enum WakeOnLAN {
         process.standardOutput = pipe
         guard (try? process.run()) != nil else { return nil }
         process.waitUntilExit()
-        guard let output = String(bytes: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) else {
+        // Latin-1 decodes any byte, so a host name that is not UTF-8 can't hide the MAC.
+        guard let output = String(bytes: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .isoLatin1) else {
             return nil
         }
         // arp drops leading zeros ("2:f:b5:..."); parseMAC accepts that, and the result is padded.

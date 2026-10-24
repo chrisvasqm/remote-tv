@@ -5,15 +5,14 @@ struct ScreenKey: View {
     let model: RemoteModel
 
     var body: some View {
-        Button(
-            model.screenIsOff ? "Turn the screen on" : "Turn the screen off",
-            systemImage: model.screenIsOff ? "sun.max.fill" : "moon.fill",
+        RoundKey(
+            title: model.screenIsOff ? "Turn the screen on" : "Turn the screen off",
+            symbol: model.screenIsOff ? "sun.max.fill" : "moon.fill",
+            size: 26,
+            help: model.screenIsOff ? "Turn the screen on" : "Pause and turn the screen off (the TV stays on)",
             action: toggle
         )
-        .labelStyle(.iconOnly)
         .font(.system(size: 11, weight: .bold))
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 26, height: 26), fill: RemotePalette.key))
-        .help(model.screenIsOff ? "Turn the screen on" : "Pause and turn the screen off (the TV stays on)")
     }
 
     private func toggle() {

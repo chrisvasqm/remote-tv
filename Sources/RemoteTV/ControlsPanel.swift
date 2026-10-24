@@ -30,17 +30,22 @@ struct ControlsPanel: View {
                 }
             }
             HStack(spacing: 12) {
-                RoundKey("Back (Delete)", symbol: "arrow.uturn.backward") { model.press(.back) }
-                RoundKey("Home", symbol: "house.fill") { model.press(.home) }
-                RoundKey("TV settings", symbol: "gearshape.fill") { model.press(.settings) }
-                RoundKey("Mute", symbol: model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                         action: model.toggleMute)
+                RoundKey(title: "Back (Delete)", symbol: "arrow.uturn.backward") { model.press(.back) }
+                RoundKey(title: "Home", symbol: "house.fill") { model.press(.home) }
+                RoundKey(title: "TV settings", symbol: "gearshape.fill") { model.press(.settings) }
+                RoundKey(
+                    title: "Mute",
+                    symbol: model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                    action: model.toggleMute
+                )
             }
+            .font(.system(size: 12, weight: .semibold))
             HStack(spacing: 12) {
-                RoundKey("Play", symbol: "play.fill", action: model.play)
-                RoundKey("Pause (Space)", symbol: "pause.fill", action: model.pause)
-                RoundKey("Stop", symbol: "stop.fill", action: model.stop)
+                RoundKey(title: "Play", symbol: "play.fill", action: model.play)
+                RoundKey(title: "Pause (Space)", symbol: "pause.fill", action: model.pause)
+                RoundKey(title: "Stop", symbol: "stop.fill", action: model.stop)
             }
+            .font(.system(size: 12, weight: .semibold))
         }
         .padding(.vertical, 4)
         .focusable()

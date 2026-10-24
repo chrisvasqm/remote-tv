@@ -7,12 +7,14 @@ struct RemoteView: View {
     let model: RemoteModel
     @State private var showSettings = false
     @State private var showMessages = false
+    /// Kept here, so an address typed but not saved survives closing Settings.
+    @State private var draftHost = ""
 
     var body: some View {
         VStack(spacing: 10) {
             HeaderBar(model: model)
             if showSettings {
-                SettingsPanel(model: model, isShown: $showSettings)
+                SettingsPanel(model: model, isShown: $showSettings, draftHost: $draftHost)
             } else if model.status == .connected {
                 if brand.supports(.screenshot) { ScreenPreview(model: model) }
                 ControlsPanel(model: model)
@@ -33,10 +35,11 @@ struct RemoteView: View {
         .background(RemotePalette.body)
         .environment(\.colorScheme, .dark)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
-        .onAppear(perform: showSettingsWithoutHost)
+        .onAppear(perform: loadHost)
     }
 
-    private func showSettingsWithoutHost() {
+    private func loadHost() {
+        draftHost = model.host
         if model.host.isEmpty { showSettings = true }
     }
 }

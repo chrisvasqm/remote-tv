@@ -24,10 +24,7 @@ struct NavigationWheel: View {
     }
 
     private func arrow(_ title: String, symbol: String, key: RemoteKey) -> some View {
-        Button(title, systemImage: symbol) { model.press(key) }
-            .labelStyle(.iconOnly)
+        RoundKey(title: title, symbol: symbol, size: 34, fill: nil) { model.press(key) }
             .font(.system(size: 12, weight: .bold))
-            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 34, height: 34), fill: nil))
-            .help(title)
     }
 }
