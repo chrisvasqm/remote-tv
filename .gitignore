@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+.DS_Store
+# local pairing keys used by the check tool
+*.key
+.env
