@@ -41,12 +41,13 @@ final class RemoteModel {
     var framesPerSecond: Double?
     private var clientHost = ""
     var pollTask: Task<Void, Never>?
-    /// A poll loop that was cancelled but may still be finishing a request.
-    var stoppingPoll: Task<Void, Never>?
+    /// Poll loops that were cancelled but may still be finishing a request.
+    var endingPolls = 0
     var wakeTask: Task<Void, Never>?
-    /// Changes when a screen off/on request starts and ends. A screen state read while
-    /// it changed may be stale, so `refreshInfo` drops it.
-    var screenGeneration = 0
+    /// Counts screen off/on requests. A screen state read while one ran, or one started,
+    /// may be stale, so `refreshInfo` drops it.
+    var screenRequestsStarted = 0
+    var screenRequestsRunning = 0
     var lastFrame: Data?
     var refreshSoon = false
 

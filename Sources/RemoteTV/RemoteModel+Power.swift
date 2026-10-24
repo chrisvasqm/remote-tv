@@ -3,8 +3,8 @@ import RemoteTVCore
 
 extension RemoteModel {
     func turnOff() {
-        guard let client else { return }
         stopWaking()
+        guard let client else { return }
         self.client = nil
         autoReconnect = false
         status = .unreachable

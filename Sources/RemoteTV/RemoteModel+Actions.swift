@@ -38,18 +38,18 @@ extension RemoteModel {
         guard let client else { return }
         let previous = screenIsOff
         screenIsOff = off
-        screenGeneration += 1
-        let generation = screenGeneration
+        screenRequestsStarted += 1
+        screenRequestsRunning += 1
+        let request = screenRequestsStarted
         Task {
-            // A screen state read while this request ran may be from before it.
-            defer { screenGeneration += 1 }
+            defer { screenRequestsRunning -= 1 }
             do {
                 try await action(client)
                 guard client === self.client else { return }
                 refreshSoon = true
                 lastError = nil
             } catch {
-                if client === self.client, screenGeneration == generation { screenIsOff = previous }
+                if client === self.client, screenRequestsStarted == request { screenIsOff = previous }
                 await report(error, from: client)
             }
         }

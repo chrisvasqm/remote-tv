@@ -17,14 +17,15 @@ extension RemoteModel {
 
     private func startPolling() {
         guard pollTask == nil else { return }
-        let previous = stoppingPoll
-        stoppingPoll = nil
         // Holds the model strongly; stopPolling() cancels the loop when the panel closes.
         pollTask = Task {
+            let clock = ContinuousClock()
             // The TV captures every frame into the same file, so let a capture of the old
             // loop finish first. Capped, so a slow request can't freeze the reopened panel.
-            if let previous { await Self.wait(for: previous, upTo: .seconds(1)) }
-            let clock = ContinuousClock()
+            let waitLimit = clock.now + .seconds(1)
+            while endingPolls > 0 && clock.now < waitLimit && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
             var lastInfo = clock.now - .seconds(60)
             var lastConnect = clock.now - .seconds(60)
             let canCapture = brand.supports(.screenshot)
@@ -53,8 +54,10 @@ extension RemoteModel {
                 let interval: Duration = live ? .milliseconds(20) : .seconds(1)
                 try? await Task.sleep(until: started + interval, clock: clock)
             }
-            // Drop a capture still in flight, so the next live view starts fresh.
-            await client?.dropPendingFrame()
+            endingPolls -= 1
+            // Drop a capture still in flight, so the next live view starts fresh, unless
+            // a new loop already runs and owns the pending frame.
+            if pollTask == nil && endingPolls == 0 { await client?.dropPendingFrame() }
         }
     }
 
@@ -62,22 +65,14 @@ extension RemoteModel {
         // The panel can report "hidden" twice; keep the loop that is still ending.
         guard let pollTask else { return }
         pollTask.cancel()
-        stoppingPoll = pollTask
+        endingPolls += 1
         self.pollTask = nil
-    }
-
-    private static func wait(for task: Task<Void, Never>, upTo limit: Duration) async {
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await task.value }
-            group.addTask { try? await Task.sleep(for: limit) }
-            await group.next()
-            group.cancelAll()
-        }
     }
 
     func refreshInfo() async {
         guard let client else { return }
-        let generation = screenGeneration
+        let started = screenRequestsStarted
+        let wasQuiet = screenRequestsRunning == 0
         do {
             async let app = client.foregroundAppId()
             async let volume = client.volume()
@@ -88,7 +83,8 @@ extension RemoteModel {
             // Assign only changes, so an unchanged TV doesn't redraw the panel every 3 seconds.
             if foregroundAppId != appId { foregroundAppId = appId }
             if self.volume != level { self.volume = level }
-            if let off, screenGeneration == generation, screenIsOff != off { screenIsOff = off }
+            let screenUnchanged = wasQuiet && screenRequestsRunning == 0 && screenRequestsStarted == started
+            if let off, screenUnchanged, screenIsOff != off { screenIsOff = off }
         } catch {
             await report(error, from: client)
         }
