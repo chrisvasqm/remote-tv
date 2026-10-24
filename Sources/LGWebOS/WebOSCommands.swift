@@ -29,11 +29,14 @@ public extension WebOSClient {
     func apps() async throws -> [TVApp] {
         let response = try await request("ssap://com.webos.applicationManager/listLaunchPoints")
         let points = response["launchPoints"] as? [JSON] ?? []
+        var seen = Set<String>()
+        // An app can have more than one launch point; list it once.
         return points.compactMap { point in
             guard point["hidden"] as? Bool != true,
                   let id = point["id"] as? String, id != "com.webos.app.discovery",
                   !id.hasPrefix("com.webos.app.hdmi"),
-                  let title = point["title"] as? String else { return nil }
+                  let title = point["title"] as? String,
+                  seen.insert(id).inserted else { return nil }
             return TVApp(id: id, title: title)
         }
     }

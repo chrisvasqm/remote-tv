@@ -23,6 +23,8 @@ public actor WebOSClient: TV {
     private var onDisconnect: (@Sendable () -> Void)?
     /// The live view's previous capture, downloading while the TV captures the next.
     private var pendingFrame: Task<Data, Error>?
+    /// Counts `dropPendingFrame` calls, so a capture that was dropped midway is discarded.
+    private var frameDrops = 0
 
     public init(host: String, keyStore: KeyStore) {
         self.host = host
@@ -48,6 +50,9 @@ public actor WebOSClient: TV {
     /// so this waits up to a minute for the user to accept it.
     public func connect() async throws {
         disconnect()
+        // A download left from the last session could otherwise trip the mismatch flag again.
+        dropPendingFrame()
+        trust.resetMismatch()
         guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
         task.resume()
@@ -64,11 +69,15 @@ public actor WebOSClient: TV {
             guard let key = response["client-key"] as? String else {
                 throw TVError.badResponse("registration without a client key")
             }
-            if key != storedKey { keyStore.setKey(key, for: host) }
-            if keyStore.pin(for: host) == nil, let pin = trust.observedPin {
+            // Never keep a key without its pin: it would later go to any certificate.
+            if keyStore.pin(for: host) == nil {
+                guard let pin = trust.observedPin else {
+                    throw TVError.badResponse("no TLS certificate to pin")
+                }
                 keyStore.setPin(pin, for: host)
                 trust.pin(pin)
             }
+            if key != storedKey { keyStore.setKey(key, for: host) }
         } catch {
             disconnect()
             throw trust.pinMismatch ? TVError.certificateChanged : error
@@ -107,13 +116,24 @@ public actor WebOSClient: TV {
     /// frame at a time into the same file, so captures can't overlap each other, but a
     /// download can overlap the next capture: about 3 frames a second instead of 2.
     public func nextFrame() async throws -> Data? {
-        let url = try await capture()
-        let previous = pendingFrame
-        pendingFrame = Task { try await download(url) }
-        return try await previous?.value
+        // A drop during either await means this live view has ended: return nothing,
+        // not even an error, since nobody is waiting for its frames.
+        let drops = frameDrops
+        do {
+            let url = try await capture()
+            guard drops == frameDrops else { return nil }
+            let previous = pendingFrame
+            pendingFrame = Task { try await download(url) }
+            let frame = try await previous?.value
+            return drops == frameDrops ? frame : nil
+        } catch {
+            if drops != frameDrops { return nil }
+            throw error
+        }
     }
 
     public func dropPendingFrame() {
+        frameDrops += 1
         pendingFrame?.cancel()
         pendingFrame = nil
     }
@@ -133,7 +153,8 @@ public actor WebOSClient: TV {
         do {
             return try await session.data(from: url).0
         } catch URLError.timedOut {
-            throw TVError.timeout(url.path)
+            // Not `.timeout`: a slow image says nothing about the control socket.
+            throw TVError.slowDownload
         }
     }
 

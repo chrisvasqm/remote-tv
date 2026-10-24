@@ -18,7 +18,8 @@ public protocol TV: Actor {
 
     // Screen (`TVCapabilities.screenshot`)
     /// The live view's next frame, as JPEG. A TV may capture the next frame while the
-    /// previous one downloads; it returns nil while the first frame is still on its way.
+    /// previous one downloads. It returns nil while the first frame is still on its way,
+    /// and when `dropPendingFrame` ended the live view during the call.
     func nextFrame() async throws -> Data?
     /// One frame, captured and downloaded now.
     func screenshot() async throws -> Data
@@ -148,6 +149,8 @@ public enum TVError: LocalizedError {
     case tv(String)
     case badResponse(String)
     case unsupported
+    /// A screenshot took too long to download. Unlike `.timeout`, the control connection may be fine.
+    case slowDownload
 
     public var errorDescription: String? {
         switch self {
@@ -161,6 +164,7 @@ public enum TVError: LocalizedError {
         case .tv(let message): return "The TV answered with an error: \(message)"
         case .badResponse(let what): return "Unexpected answer from the TV: \(what)"
         case .unsupported: return "This TV can't do that."
+        case .slowDownload: return "The TV took too long to send its picture."
         }
     }
 }
