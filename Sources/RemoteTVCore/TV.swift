@@ -65,6 +65,27 @@ public protocol TVBrand: Sendable {
     func makeTV(host: String, keyStore: KeyStore) -> any TV
 }
 
+public extension TVBrand {
+    func supports(_ capability: TVCapabilities) -> Bool { capabilities.contains(capability) }
+}
+
+/// Optional features throw `.unsupported` unless a brand implements them; list the
+/// ones it does implement in `TVBrand.capabilities`.
+public extension TV {
+    func nextFrame() async throws -> Data? { throw TVError.unsupported }
+    func screenshot() async throws -> Data { throw TVError.unsupported }
+    func dropPendingFrame() {}
+    func apps() async throws -> [TVApp] { [] }
+    func launch(_ app: TVApp) async throws { throw TVError.unsupported }
+    func close(appId: String) async throws { throw TVError.unsupported }
+    func inputs() async throws -> [TVInput] { [] }
+    func switchInput(_ input: TVInput) async throws { throw TVError.unsupported }
+    func showMessage(_ text: String) async throws { throw TVError.unsupported }
+    func setScreen(on: Bool) async throws { throw TVError.unsupported }
+    func screenIsOff() async throws -> Bool { false }
+    func turnOff() async throws { throw TVError.unsupported }
+}
+
 /// The features a brand supports. The panel hides controls for the rest.
 public struct TVCapabilities: OptionSet, Sendable {
     public let rawValue: Int
@@ -108,7 +129,7 @@ public struct TVInput: Identifiable, Hashable, Sendable {
     }
 }
 
-public struct TVVolume: Sendable {
+public struct TVVolume: Equatable, Sendable {
     public let level: Int
     public let muted: Bool
 
@@ -126,6 +147,7 @@ public enum TVError: LocalizedError {
     case timeout(String)
     case tv(String)
     case badResponse(String)
+    case unsupported
 
     public var errorDescription: String? {
         switch self {
@@ -137,6 +159,7 @@ public enum TVError: LocalizedError {
         case .timeout(let what): return "The TV did not answer: \(what)"
         case .tv(let message): return "The TV answered with an error: \(message)"
         case .badResponse(let what): return "Unexpected answer from the TV: \(what)"
+        case .unsupported: return "This TV can't do that."
         }
     }
 }

@@ -5,28 +5,30 @@ import os
 
 private let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
 
+/// Observed per property, so a new frame redraws the preview and not the whole panel.
 @MainActor
-final class RemoteModel: ObservableObject {
+@Observable
+final class RemoteModel {
     enum Status: Equatable {
         case idle, connecting, pairing, connected, unreachable, networkBlocked
     }
 
     /// The confirmed TV address (trimmed). Changed only through `setHost`.
-    @Published private(set) var host: String
-    @Published private(set) var status: Status = .idle
-    @Published private(set) var screenshot: NSImage?
-    @Published private(set) var screenIsProtected = false
-    @Published private(set) var apps: [TVApp] = []
-    @Published private(set) var inputs: [TVInput] = []
-    @Published private(set) var foregroundAppId: String?
-    @Published private(set) var volume: TVVolume?
+    private(set) var host: String
+    private(set) var status: Status = .idle
+    private(set) var screenshot: NSImage?
+    private(set) var screenIsProtected = false
+    private(set) var apps: [TVApp] = []
+    private(set) var inputs: [TVInput] = []
+    private(set) var foregroundAppId: String?
+    private(set) var volume: TVVolume?
     /// The picture is off but the TV is on (see `turnScreenOff`).
-    @Published private(set) var screenIsOff = false
-    @Published var lastError: String?
+    private(set) var screenIsOff = false
+    var lastError: String?
     /// True while the app sends Wake-on-LAN packets and waits for the TV to start.
-    @Published private(set) var isWaking = false
+    private(set) var isWaking = false
     /// The last message the TV accepted, for a short confirmation in the panel.
-    @Published var lastMessageSent: String?
+    var lastMessageSent: String?
 
     private let keyStore = FileKeyStore.appSupport
     private var client: (any TV)?
@@ -37,7 +39,7 @@ final class RemoteModel: ObservableObject {
     private var blackFrames = 0
     private var frameTimes: [ContinuousClock.Instant] = []
     /// Frames shown per second over the last few seconds.
-    @Published private(set) var framesPerSecond: Double?
+    private(set) var framesPerSecond: Double?
     private var clientHost = ""
     private var pollTask: Task<Void, Never>?
     private var lastFrame: Data?
@@ -61,6 +63,11 @@ final class RemoteModel: ObservableObject {
         autoReconnect = true
         await connect()
     }
+
+    var isHome: Bool { foregroundAppId == nil || foregroundAppId == brand.homeAppId }
+
+    /// Pairing, connecting or waking the TV: the panel shows progress instead of buttons.
+    var isBusy: Bool { status == .pairing || status == .connecting || isWaking }
 
     var foregroundTitle: String {
         guard let id = foregroundAppId else { return "–" }
@@ -105,14 +112,15 @@ final class RemoteModel: ObservableObject {
             self.apps = loadedApps
             self.inputs = loadedInputs
             await refreshInfo()
-            if UserDefaults.standard.string(forKey: Self.macKey(host)) == nil,
+            if brand.supports(.wakeOnLAN), UserDefaults.standard.string(forKey: Self.macKey(host)) == nil,
                let mac = await WakeOnLAN.macAddress(for: host) {
                 UserDefaults.standard.set(mac, forKey: Self.macKey(host))
             }
         } catch {
             guard client === self.client else { return }
             log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            let denied = await LocalNetworkAccess.isDenied()
+            // A TV's own answer (refused, timed out) can't be macOS blocking the network.
+            let denied = error is TVError ? false : await LocalNetworkAccess.isDenied()
             status = denied ? .networkBlocked : .unreachable
             lastError = denied ? nil : error.localizedDescription
         }
@@ -134,17 +142,18 @@ final class RemoteModel: ObservableObject {
             let clock = ContinuousClock()
             var lastInfo = clock.now - .seconds(60)
             var lastConnect = clock.now - .seconds(60)
+            let canCapture = brand.supports(.screenshot)
             while !Task.isCancelled {
                 let started = clock.now
                 switch status {
                 case .connected:
                     let due = refreshSoon || started - lastInfo >= .seconds(3)
                     refreshSoon = false
-                    if due {
-                        lastInfo = started
-                        await refreshInfo()
-                    }
-                    if (due || !screenIsProtected) && brand.capabilities.contains(.screenshot) { await refreshScreen() }
+                    if due { lastInfo = started }
+                    // Independent requests: the info refresh doesn't hold up the next frame.
+                    async let info: Void = due ? refreshInfo() : ()
+                    if canCapture && (due || !screenIsProtected) { await refreshScreen() }
+                    await info
                 case .idle, .unreachable, .networkBlocked:
                     if autoReconnect && started - lastConnect >= .seconds(10) {
                         lastConnect = started
@@ -155,7 +164,7 @@ final class RemoteModel: ObservableObject {
                 }
                 // Start the next capture as soon as one finishes while the picture
                 // is live; everything else ticks once a second.
-                let live = status == .connected && !screenIsProtected && brand.capabilities.contains(.screenshot)
+                let live = status == .connected && !screenIsProtected && canCapture
                 let interval: Duration = live ? .milliseconds(20) : .seconds(1)
                 try? await Task.sleep(until: started + interval, clock: clock)
             }
@@ -173,12 +182,14 @@ final class RemoteModel: ObservableObject {
         do {
             async let app = client.foregroundAppId()
             async let volume = client.volume()
-            async let screenOff = try? client.screenIsOff()
+            async let screenOff = brand.supports(.screenOff) ? try? client.screenIsOff() : nil
             let (appId, level) = try await (app, volume)
             let off = await screenOff
             guard client === self.client else { return }
-            (foregroundAppId, self.volume) = (appId, level)
-            if let off { screenIsOff = off }
+            // Assign only changes, so an unchanged TV doesn't redraw the panel every 3 seconds.
+            if foregroundAppId != appId { foregroundAppId = appId }
+            if self.volume != level { self.volume = level }
+            if let off, screenIsOff != off { screenIsOff = off }
         } catch {
             await report(error, from: client)
         }
@@ -207,7 +218,7 @@ final class RemoteModel: ObservableObject {
                 screenshot = frame.image
                 countFrame()
             }
-            screenIsProtected = blackFrames >= 5
+            if screenIsProtected != (blackFrames >= 5) { screenIsProtected = blackFrames >= 5 }
         } catch {
             await report(error, from: client)
         }
@@ -219,7 +230,6 @@ final class RemoteModel: ObservableObject {
         guard failed === client else { return }
         lastError = error.localizedDescription
         if case TVError.timeout = error { await failed.disconnect() }
-        if case URLError.timedOut = error { await failed.disconnect() }
         if await !failed.isConnected, status == .connected { status = .unreachable }
     }
 
@@ -230,7 +240,6 @@ final class RemoteModel: ObservableObject {
     }
 
     private func resetTVState() {
-        Task { [client] in await client?.dropPendingFrame() }
         frameTimes = []
         framesPerSecond = nil
         screenshot = nil
@@ -276,7 +285,7 @@ final class RemoteModel: ObservableObject {
     }
 
     func closeForegroundApp() {
-        guard let id = foregroundAppId, id != brand.homeAppId else { return }
+        guard !isHome, let id = foregroundAppId else { return }
         run { try await $0.close(appId: id) }
     }
 
@@ -307,7 +316,6 @@ final class RemoteModel: ObservableObject {
         }
     }
 
-    /// Sends the Wake-on-LAN packet; the poll loop reconnects once the TV is up.
     /// Wakes the TV and keeps trying to connect while it starts, which takes about 10 seconds.
     func turnOn() {
         autoReconnect = true
@@ -374,7 +382,8 @@ private struct Frame: @unchecked Sendable {
                   CGImageSourceGetStatus(source) == .statusComplete,
                   let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                       kCGImageSourceCreateThumbnailFromImageAlways: true,
-                      kCGImageSourceThumbnailMaxPixelSize: 720,
+                      // The preview is 252 pt wide: 504 px on a Retina screen.
+                      kCGImageSourceThumbnailMaxPixelSize: 560,
                   ] as CFDictionary) else { return nil }
             let image = NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width, height: thumbnail.height))
             return Frame(image: image, isNearlyBlack: nearlyBlack(thumbnail))

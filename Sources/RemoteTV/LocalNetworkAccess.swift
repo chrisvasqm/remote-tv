@@ -10,6 +10,8 @@ enum LocalNetworkAccess {
     /// Starts a short Bonjour browse and reports whether macOS denied it.
     /// The first call also makes macOS show its permission prompt.
     static func isDenied() async -> Bool {
+        // A placeholder service, the same for every brand: browsing for anything listed
+        // in NSBonjourServices (scripts/bundle.sh) is what makes macOS ask. Keep the two in step.
         let browser = NWBrowser(for: .bonjour(type: "_lgremote._tcp", domain: nil), using: .tcp)
         defer { browser.cancel() }
         return await withCheckedContinuation { continuation in
@@ -46,10 +48,10 @@ private final class Once: @unchecked Sendable {
     }
 
     func resume(_ value: Bool) {
-        lock.lock()
-        let pending = continuation
-        continuation = nil
-        lock.unlock()
+        let pending = lock.withLock {
+            defer { continuation = nil }
+            return continuation
+        }
         pending?.resume(returning: value)
     }
 }

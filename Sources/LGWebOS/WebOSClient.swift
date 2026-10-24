@@ -132,7 +132,11 @@ public actor WebOSClient: TV {
 
     /// Fetches a captured image. Runs outside the actor so it can overlap the next capture.
     private nonisolated func download(_ url: URL) async throws -> Data {
-        try await session.data(from: url).0
+        do {
+            return try await session.data(from: url).0
+        } catch URLError.timedOut {
+            throw TVError.timeout(url.path)
+        }
     }
 
     // MARK: - Socket plumbing
@@ -217,8 +221,7 @@ public actor WebOSClient: TV {
             // The pointer socket closed; the next press opens a new one.
             if let pointerSocket, (try? await pointerSocket.value) === task { self.pointerSocket = nil }
         case .success(let message):
-            guard task === socket else { return listen(task) }
-            if case .string(let text) = message { route(text) }
+            if task === socket, case .string(let text) = message { route(text) }
             listen(task)
         }
     }

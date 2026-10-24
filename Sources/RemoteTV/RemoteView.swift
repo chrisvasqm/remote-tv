@@ -2,7 +2,7 @@ import RemoteTVCore
 import SwiftUI
 
 struct RemoteView: View {
-    @ObservedObject var model: RemoteModel
+    let model: RemoteModel
     @State private var message = ""
     /// The first press arms the power key; a second press within a few seconds turns the TV off.
     @State private var powerArmed = false
@@ -137,7 +137,7 @@ struct RemoteView: View {
                 HStack(spacing: 6) {
                     Circle().fill(.red).frame(width: 6, height: 6)
                     Text(model.foregroundTitle).font(.caption.weight(.semibold))
-                    if model.foregroundAppId != brand.homeAppId {
+                    if !model.isHome {
                         Button { model.closeForegroundApp() } label: {
                             Image(systemName: "xmark").font(.caption2.weight(.bold))
                         }
@@ -222,15 +222,15 @@ struct RemoteView: View {
     /// The wheel: four arrows around a round OK key, like the remote's navigation ring.
     private var dpad: some View {
         let ring: CGFloat = 116
-        let arrow = CGSize(width: 34, height: 34)
+        let reach = ring / 2 - 18
         return ZStack {
             Circle().fill(Remote.key)
                 .overlay(Circle().strokeBorder(Remote.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
-            arrowKey("chevron.up", "Up (↑)", .up, arrow).offset(y: -(ring / 2 - 18))
-            arrowKey("chevron.down", "Down (↓)", .down, arrow).offset(y: ring / 2 - 18)
-            arrowKey("chevron.left", "Left (←)", .left, arrow).offset(x: -(ring / 2 - 18))
-            arrowKey("chevron.right", "Right (→)", .right, arrow).offset(x: ring / 2 - 18)
+            arrowKey("chevron.up", "Up (↑)", .up).offset(y: -reach)
+            arrowKey("chevron.down", "Down (↓)", .down).offset(y: reach)
+            arrowKey("chevron.left", "Left (←)", .left).offset(x: -reach)
+            arrowKey("chevron.right", "Right (→)", .right).offset(x: reach)
             Button { model.press(.ok) } label: {
                 Text("OK").font(.system(size: 13, weight: .semibold))
             }
@@ -240,11 +240,11 @@ struct RemoteView: View {
         .frame(width: ring, height: ring)
     }
 
-    private func arrowKey(_ symbol: String, _ help: String, _ key: RemoteKey, _ size: CGSize) -> some View {
+    private func arrowKey(_ symbol: String, _ help: String, _ key: RemoteKey) -> some View {
         Button { model.press(key) } label: {
             Image(systemName: symbol).font(.system(size: 12, weight: .bold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: size, fill: .clear))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 34, height: 34), fill: nil))
         .help(help)
         .accessibilityLabel(help)
     }
@@ -254,8 +254,8 @@ struct RemoteView: View {
     /// on top in the middle and lets clicks through.
     private func rocker(
         _ name: String,
-        up: (symbol: String, help: String, action: () -> Void),
-        down: (symbol: String, help: String, action: () -> Void)
+        up: RockerKey,
+        down: RockerKey
     ) -> some View {
         VStack(spacing: 0) {
             rockerHalf(up, edge: .top)
@@ -272,7 +272,9 @@ struct RemoteView: View {
         .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
     }
 
-    private func rockerHalf(_ half: (symbol: String, help: String, action: () -> Void), edge: VerticalEdge) -> some View {
+    private typealias RockerKey = (symbol: String, help: String, action: () -> Void)
+
+    private func rockerHalf(_ half: RockerKey, edge: VerticalEdge) -> some View {
         Button(action: half.action) {
             Image(systemName: half.symbol).font(.system(size: 11, weight: .bold))
                 .padding(edge == .top ? .top : .bottom, 12)
@@ -293,7 +295,7 @@ struct RemoteView: View {
         }
         .menuStyle(.button)
         .fixedSize()
-        .help("Switch to an HDMI input")
+        .help("Switch input")
     }
 
     // MARK: - Apps
@@ -328,26 +330,26 @@ struct RemoteView: View {
     // MARK: - Messages
 
     private var messages: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    ForEach(Self.presets, id: \.self) { preset in
-                        Button(preset) { model.showMessage(preset) }
-                            .buttonStyle(.bordered).controlSize(.small)
-                    }
-                }
-                HStack {
-                    TextField("Your message", text: $message)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(sendMessage)
-                    Button("Show", action: sendMessage).disabled(trimmedMessage.isEmpty)
-                }
-                if let sent = model.lastMessageSent {
-                    Label("Shown on the TV: \(sent)", systemImage: "checkmark.circle")
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(Self.presets, id: \.self) { preset in
+                    Button(preset) { model.showMessage(preset) }
+                        .buttonStyle(.bordered).controlSize(.small)
                 }
             }
-            .font(.callout)
-            .foregroundStyle(Remote.label)
+            HStack {
+                TextField("Your message", text: $message)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(sendMessage)
+                Button("Show", action: sendMessage).disabled(trimmedMessage.isEmpty)
+            }
+            if let sent = model.lastMessageSent {
+                Label("Shown on the TV: \(sent)", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .font(.callout)
+        .foregroundStyle(Remote.label)
     }
 
     // MARK: - Offline and settings
@@ -356,20 +358,15 @@ struct RemoteView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(offlineText).font(.callout).foregroundStyle(Remote.label).fixedSize(horizontal: false, vertical: true)
             HStack {
-                switch model.status {
-                case .networkBlocked:
+                if model.status == .networkBlocked {
                     Button("Open Local Network settings") { LocalNetworkAccess.openSettings() }
                         .buttonStyle(.borderedProminent)
-                case .pairing, .connecting:
+                } else if model.isBusy {
                     ProgressView().controlSize(.small)
-                case _ where model.isWaking:
-                    ProgressView().controlSize(.small)
-                default:
-                    if can(.wakeOnLAN) {
-                        Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
-                    }
+                } else if can(.wakeOnLAN) {
+                    Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
                 }
-                if model.status != .pairing && model.status != .connecting && !model.isWaking {
+                if !model.isBusy {
                     Button("Try again") { Task { await model.reconnect() } }
                 }
             }
@@ -413,7 +410,7 @@ struct RemoteView: View {
     // MARK: - Helpers
 
     private func can(_ capability: TVCapabilities) -> Bool {
-        brand.capabilities.contains(capability)
+        brand.supports(capability)
     }
 
     private func key(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
@@ -492,10 +489,13 @@ private enum Remote {
 
 /// A physical key: a raised shape that sinks a little when pressed.
 private struct KeyStyle: ButtonStyle {
+    /// A circle key has a fixed square size; a capsule key stretches to its width.
+    /// Both draw a `Capsule`, which is a circle in a square frame.
     enum Shape { case circle, capsule }
     let shape: Shape
     let size: CGSize
-    let fill: Color
+    /// Nil for keys drawn on another key's surface, such as the wheel's arrows.
+    let fill: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -503,20 +503,16 @@ private struct KeyStyle: ButtonStyle {
             .frame(minWidth: size.width, maxWidth: shape == .capsule ? .infinity : size.width)
             .frame(height: size.height)
             .background {
-                if fill != .clear {
-                    background.fill(fill)
-                        .overlay(background.strokeBorder(Remote.edge, lineWidth: 1))
+                if let fill {
+                    Capsule().fill(fill)
+                        .overlay(Capsule().strokeBorder(Remote.edge, lineWidth: 1))
                         .shadow(color: .black.opacity(configuration.isPressed ? 0 : 0.5), radius: 2, y: configuration.isPressed ? 0 : 2)
                 }
             }
-            .contentShape(background)
+            .contentShape(Capsule())
             .brightness(configuration.isPressed ? 0.12 : 0)
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
-    }
-
-    private var background: AnyInsettableShape {
-        shape == .circle ? AnyInsettableShape(Ellipse()) : AnyInsettableShape(Capsule())
     }
 }
 
@@ -529,18 +525,4 @@ private struct RockerHalfStyle: ButtonStyle {
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
-}
-
-/// Lets `KeyStyle` pick its shape at run time and still use `strokeBorder`.
-private struct AnyInsettableShape: InsettableShape {
-    private let path: @Sendable (CGRect) -> Path
-    private let inset: @Sendable (CGFloat) -> AnyInsettableShape
-
-    init<S: InsettableShape>(_ shape: S) {
-        path = { shape.path(in: $0) }
-        inset = { AnyInsettableShape(shape.inset(by: $0)) }
-    }
-
-    func path(in rect: CGRect) -> Path { path(rect) }
-    func inset(by amount: CGFloat) -> AnyInsettableShape { inset(amount) }
 }

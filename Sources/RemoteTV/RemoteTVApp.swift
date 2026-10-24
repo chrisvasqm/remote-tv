@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct RemoteTVApp: App {
-    @StateObject private var model = RemoteModel()
+    @State private var model = RemoteModel()
 
     var body: some Scene {
         MenuBarExtra {

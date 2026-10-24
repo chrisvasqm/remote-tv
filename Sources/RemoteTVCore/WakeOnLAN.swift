@@ -1,7 +1,7 @@
 import Foundation
 
-/// Turns the TV on with a Wake-on-LAN magic packet. The TV must have
-/// "TV On With Mobile > Turn on via Wi-Fi" switched on.
+/// Turns a TV on with a Wake-on-LAN magic packet, for brands with
+/// `TVCapabilities.wakeOnLAN`. The TV usually needs a setting for it (`TVBrand.wakeHelp`).
 public enum WakeOnLAN {
     /// Sends the magic packet every way a TV might hear it: the limited broadcast, each
     /// local network's own broadcast address, and straight to the TV's last known address,
