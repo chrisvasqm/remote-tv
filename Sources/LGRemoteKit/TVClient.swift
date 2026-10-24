@@ -108,6 +108,11 @@ public actor TVClient {
         try await pointer().send(.string("type:button\nname:\(button)\n\n"))
     }
 
+    /// Opens the button socket without pressing anything (used by the check tool).
+    public func openButtonSocket() async throws {
+        _ = try await pointer()
+    }
+
     /// Captures the screen. Protected content (Netflix, HDMI, Live TV) comes back black.
     public func screenshot() async throws -> Data {
         let response = try await request("ssap://tv/executeOneShot")

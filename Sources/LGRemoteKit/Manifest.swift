@@ -5,13 +5,18 @@ enum Manifest {
         "manifestVersion": 1,
         "appVersion": "1.0",
         "deviceName": "LG Remote for Mac",
+        // Only what the app uses. Each permission is listed in the TV's pairing prompt.
         "permissions": [
-            "LAUNCH", "LAUNCH_WEBAPP", "APP_TO_APP", "CLOSE",
-            "CONTROL_AUDIO", "CONTROL_DISPLAY", "CONTROL_INPUT_JOYSTICK",
-            "CONTROL_INPUT_MEDIA_PLAYBACK", "CONTROL_INPUT_TV", "CONTROL_POWER", "CONTROL_TV_SCREEN",
-            "READ_APP_STATUS", "READ_INPUT_DEVICE_LIST", "READ_NETWORK_STATE", "READ_RUNNING_APPS",
-            "READ_POWER_STATE", "READ_INSTALLED_APPS", "WRITE_NOTIFICATION_TOAST",
-            "CONTROL_INPUT_TEXT", "CONTROL_MOUSE_AND_KEYBOARD",
+            "LAUNCH", "CLOSE",                                  // open and close apps
+            "READ_INSTALLED_APPS",                              // Home row apps
+            "READ_APP_STATUS", "READ_RUNNING_APPS",             // current app
+            "READ_INPUT_DEVICE_LIST", "CONTROL_INPUT_TV",       // HDMI inputs
+            "CONTROL_AUDIO",                                    // volume and mute
+            "CONTROL_INPUT_MEDIA_PLAYBACK",                     // play, pause, stop
+            "CONTROL_INPUT_JOYSTICK", "CONTROL_MOUSE_AND_KEYBOARD", // arrow keys, OK, Back, Home
+            "CONTROL_TV_SCREEN", "CONTROL_DISPLAY",             // screenshot
+            "WRITE_NOTIFICATION_TOAST",                         // messages on screen
+            "CONTROL_POWER",                                    // turn off
         ],
     ]
 }

@@ -44,7 +44,10 @@ allow access to the local network; allow it.
 
 ## Security
 
-- The pairing key is stored in the login Keychain (service `com.chrisvasqm.lgremote`).
+- The pairing key is stored in `~/Library/Application Support/LG Remote/<tv>.key`
+  (folder 700, file 600). There is no Keychain prompt; any app running as you
+  could read the key.
+- The app asks the TV only for the permissions it uses (see `Manifest.swift`).
 - The TV's self-signed certificate is trusted only for the configured TV
   address on port 3001.
 - To unpair: **Settings > Forget pairing** in the panel. Anyone on your network
@@ -55,5 +58,5 @@ allow access to the local network; allow it.
 ```sh
 swift build
 # read-only check against a real TV; the first run shows a pairing prompt on the TV
-swift run lgremote-check <tv-ip> ~/.lgremote-check.key [screen.jpg]
+swift run lgremote-check <tv-ip> <key-dir> [screen.jpg]
 ```

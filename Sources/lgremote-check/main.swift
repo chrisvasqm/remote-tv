@@ -2,16 +2,16 @@ import Foundation
 import LGRemoteKit
 
 // Read-only smoke test against a real TV:
-//   swift run lgremote-check <tv-ip> <key-file> [screenshot.jpg]
+//   swift run lgremote-check <tv-ip> <key-dir> [screenshot.jpg]
 // The first run without a key file shows a pairing prompt on the TV.
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 3 else {
-    FileHandle.standardError.write(Data("usage: lgremote-check <tv-ip> <key-file> [screenshot.jpg]\n".utf8))
+    FileHandle.standardError.write(Data("usage: lgremote-check <tv-ip> <key-dir> [screenshot.jpg]\n".utf8))
     exit(2)
 }
 
-let client = TVClient(host: arguments[1], keyStore: FileKeyStore(path: arguments[2]))
+let client = TVClient(host: arguments[1], keyStore: FileKeyStore(directory: URL(fileURLWithPath: arguments[2], isDirectory: true)))
 
 func check(_ name: String, _ body: () async throws -> String) async -> Bool {
     do {
@@ -39,6 +39,10 @@ results.append(await check("screenshot") {
     let data = try await client.screenshot()
     if arguments.count > 3 { try data.write(to: URL(fileURLWithPath: arguments[3])) }
     return "\(data.count) bytes"
+})
+results.append(await check("button socket") {
+    try await client.openButtonSocket()
+    return "open"
 })
 results.append(await check("mac address") { await WakeOnLAN.macAddress(for: arguments[1]) ?? "unknown" })
 await client.shutdown()
