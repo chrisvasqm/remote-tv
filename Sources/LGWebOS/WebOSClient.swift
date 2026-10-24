@@ -52,7 +52,7 @@ public actor WebOSClient: TV {
         disconnect()
         // A download left from the last session could otherwise trip the mismatch flag again.
         dropPendingFrame()
-        trust.resetObservations()
+        trust.resetMismatch()
         guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
         task.resume()
