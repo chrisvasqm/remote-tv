@@ -73,7 +73,25 @@ public struct FileKeyStore: KeyStore {
     }
 
     private func file(_ host: String, _ ext: String) -> URL {
-        let safeName = host.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" ? $0 : "_" }
-        return directory.appendingPathComponent(String(safeName) + "." + ext)
+        directory.appendingPathComponent(Self.fileName(host) + "." + ext)
+    }
+
+    /// Letters, digits, ".", "-" and "_" stay; every other byte becomes %XX. So a host
+    /// can't leave the folder, and hosts that differ in other characters never share a
+    /// file. Any address that could pair before keeps its file name, so nothing moves.
+    /// Letter case is not encoded: host names ignore case, and so does the default volume.
+    static func fileName(_ host: String) -> String {
+        var name = ""
+        for character in host {
+            if character.isLetter || character.isNumber || character == "." || character == "-" || character == "_" {
+                name.append(character)
+            } else {
+                for byte in String(character).utf8 {
+                    let hex = String(byte, radix: 16, uppercase: true)
+                    name += "%" + (hex.count == 1 ? "0" + hex : hex)
+                }
+            }
+        }
+        return name
     }
 }

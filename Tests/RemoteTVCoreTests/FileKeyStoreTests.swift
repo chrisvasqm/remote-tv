@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import RemoteTVCore
+@testable import RemoteTVCore
 
 /// Each test gets its own temporary directory, removed afterwards.
 final class FileKeyStoreTests {
@@ -80,6 +80,27 @@ final class FileKeyStoreTests {
         for file in files {
             #expect(try permissions(of: file) == 0o600, "\(file.lastPathComponent)")
         }
+    }
+
+    @Test func hostsThatDifferOnlyInSymbolsKeepSeparateFiles() {
+        store.setKey("slash", for: "a/b")
+        store.setKey("underscore", for: "a_b")
+        store.setKey("colon", for: "a:b")
+        #expect(store.key(for: "a/b") == "slash")
+        #expect(store.key(for: "a_b") == "underscore")
+        #expect(store.key(for: "a:b") == "colon")
+    }
+
+    @Test(arguments: [
+        ("192.168.0.199", "192.168.0.199"),
+        ("tv.local", "tv.local"),
+        ("tv_1.local", "tv_1.local"),
+        ("a/b", "a%2Fb"),
+        ("fe80::1%en0", "fe80%3A%3A1%25en0"),
+        ("../x", "..%2Fx"),
+    ])
+    func namesFilesSafely(_ host: String, _ name: String) {
+        #expect(FileKeyStore.fileName(host) == name)
     }
 
     private func permissions(of url: URL) throws -> Int {
