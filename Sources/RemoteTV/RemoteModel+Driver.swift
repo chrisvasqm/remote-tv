@@ -47,9 +47,11 @@ extension RemoteModel {
                 await client?.dropPendingFrame()
             }
             // Start the next capture as soon as one finishes while the picture is live;
-            // otherwise check once a second, or sooner when an intent nudges.
+            // otherwise check once a second, or sooner when an intent nudges. With nothing
+            // to do (panel closed, no wake or request), sleep until an intent nudges.
             let live = status == .connected && panelIsVisible && !screenIsProtected && canCapture
-            let next = started + (live ? .milliseconds(20) : .seconds(1))
+            let idle = !panelIsVisible && wake == nil && !connectRequested && screenChanges.isEmpty
+            let next = started + (live ? .milliseconds(20) : idle ? .seconds(3600) : .seconds(1))
             if next > clock.now { await nudge.wait(upTo: next - clock.now) }
         }
     }
@@ -68,13 +70,15 @@ extension RemoteModel {
         dropClient()
         resetTVState()
         let client = brand.makeTV(host: host, keyStore: keyStore)
+        // Set before any await, so Turn off, Unpair or a new address meanwhile drops it.
+        self.client = client
+        status = keyStore.key(for: host) == nil ? .pairing : .connecting
         await client.setDisconnectHandler { [weak self, weak client] in
             Task { @MainActor in
                 if let client { self?.clientDropped(client) }
             }
         }
-        self.client = client
-        status = keyStore.key(for: host) == nil ? .pairing : .connecting
+        guard client === self.client else { return }
         do {
             try await client.connect()
             guard client === self.client else { return }
@@ -107,7 +111,7 @@ extension RemoteModel {
     // MARK: - Wake-on-LAN
 
     /// One step every 3 seconds: a packet for the first 3 steps (in case one is lost on
-    /// Wi-Fi), and a connect from the second step on, while the TV starts.
+    /// Wi-Fi), then a connect from the second step on, while the TV starts.
     private func stepWake(_ plan: WakePlan, now: ContinuousClock.Instant) async {
         if status == .connected {
             wake = nil
@@ -123,15 +127,17 @@ extension RemoteModel {
         next.step += 1
         next.nextStep = now + .seconds(3)
         wake = next
-        if plan.step > 0 { await connect() }
-        // Turn off, Forget pairing or another address ended the wake meanwhile.
-        guard wake == next, status != .connected, plan.step < 3 else { return }
-        do {
-            try WakeOnLAN.send(mac: plan.mac, host: plan.host)
-        } catch {
-            wake = nil
-            lastError = error.localizedDescription
+        // The packet goes first, so a slow connect never delays it.
+        if plan.step < 3 {
+            do {
+                try WakeOnLAN.send(mac: plan.mac, host: plan.host)
+            } catch {
+                wake = nil
+                lastError = error.localizedDescription
+                return
+            }
         }
+        if plan.step > 0 { await connect() }
     }
 
     // MARK: - Screen changes
@@ -140,6 +146,7 @@ extension RemoteModel {
     /// the panel ends on the last state the TV accepted, not on a refused one.
     private func applyScreenChanges() async {
         guard let first = screenChanges.first else { return }
+        let owner = client
         var accepted = first.previous
         var anyFailed = false
         while !screenChanges.isEmpty {
@@ -160,7 +167,8 @@ extension RemoteModel {
                 await report(error, from: client)
             }
         }
-        if anyFailed { screenIsOff = accepted }
+        // After Turn off or a new address, the state was reset; leave it alone.
+        if anyFailed, owner === client { screenIsOff = accepted }
     }
 
     // MARK: - Live view

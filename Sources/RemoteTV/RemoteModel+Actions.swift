@@ -46,6 +46,7 @@ extension RemoteModel {
                 guard client === self.client else { return }
                 onSuccess?(self)
                 refreshSoon = true
+                nudge.fire()
                 lastError = nil
             } catch {
                 await report(error, from: client)

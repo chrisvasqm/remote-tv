@@ -19,7 +19,7 @@ public protocol TV: Actor {
     // Screen (`TVCapabilities.screenshot`)
     /// The live view's next frame, as JPEG. A TV may capture the next frame while the
     /// previous one downloads; it returns nil while the first frame is still on its way.
-    /// Callers don't overlap it with `dropPendingFrame` or another capture.
+    /// Call it from one place at a time, since the TV captures into one file.
     func nextFrame() async throws -> Data?
     /// One frame, captured and downloaded now.
     func screenshot() async throws -> Data
