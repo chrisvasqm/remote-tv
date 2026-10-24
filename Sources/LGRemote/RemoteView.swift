@@ -9,6 +9,11 @@ struct RemoteView: View {
     @State private var draftHost = ""
     @FocusState private var remoteFocused: Bool
 
+    private static let panelWidth: CGFloat = 440
+    private static let padding: CGFloat = 16
+    /// The menu-bar window sizes itself to its content, so the 16:9 preview needs a fixed size.
+    private static let previewWidth = panelWidth - 2 * padding
+
     private static let presets = ["Bedtime in 10 min", "Dinner is ready", "Screen time is over"]
 
     var body: some View {
@@ -35,8 +40,8 @@ struct RemoteView: View {
             }
             footer
         }
-        .padding(16)
-        .frame(width: 440)
+        .padding(Self.padding)
+        .frame(width: Self.panelWidth)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
         .onAppear {
             draftHost = model.host
@@ -68,8 +73,7 @@ struct RemoteView: View {
 
     private var screen: some View {
         Color.black
-            .aspectRatio(16 / 9, contentMode: .fit)
-            .frame(maxWidth: .infinity)
+            .frame(width: Self.previewWidth, height: Self.previewWidth * 9 / 16)
             .overlay {
                 if let image = model.screenshot {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
