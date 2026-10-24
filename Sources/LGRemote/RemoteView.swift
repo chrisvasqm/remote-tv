@@ -18,6 +18,9 @@ struct RemoteView: View {
                 settings
             } else if model.status == .connected {
                 screen
+                Toggle("Smooth preview (about 2 frames a second)", isOn: $model.smoothPreview)
+                    .toggleStyle(.switch).controlSize(.mini).font(.caption)
+                    .help("Captures frames back to back. Uses more network traffic, about 250 KB per second.")
                 controls
                 Divider()
                 appGrid

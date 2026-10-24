@@ -23,6 +23,11 @@ final class RemoteModel: ObservableObject {
     @Published var lastError: String?
     /// The last message the TV accepted, for a short confirmation in the panel.
     @Published var lastMessageSent: String?
+    /// Smooth: capture frames back to back (about 2 per second while video plays,
+    /// since one capture takes ~0.5 s). Off: one frame a second.
+    @Published var smoothPreview: Bool = UserDefaults.standard.bool(forKey: "smoothPreview") {
+        didSet { UserDefaults.standard.set(smoothPreview, forKey: "smoothPreview") }
+    }
 
     private let keyStore = FileKeyStore.appSupport
     private var client: TVClient?
@@ -124,21 +129,33 @@ final class RemoteModel: ObservableObject {
         guard pollTask == nil else { return }
         // Holds the model strongly; stopPolling() cancels the loop when the panel closes.
         pollTask = Task {
-            var tick = 0
+            let clock = ContinuousClock()
+            var lastInfo = clock.now - .seconds(60)
+            var lastConnect = clock.now - .seconds(60)
             while !Task.isCancelled {
+                let started = clock.now
                 switch status {
                 case .connected:
-                    let due = tick % 3 == 0 || refreshSoon
+                    let due = refreshSoon || started - lastInfo >= .seconds(3)
                     refreshSoon = false
-                    if due { await refreshInfo() }
+                    if due {
+                        lastInfo = started
+                        await refreshInfo()
+                    }
                     if due || !screenIsProtected { await refreshScreen() }
                 case .idle, .unreachable, .networkBlocked:
-                    if tick % 10 == 0 && autoReconnect { await connect() }
+                    if autoReconnect && started - lastConnect >= .seconds(10) {
+                        lastConnect = started
+                        await connect()
+                    }
                 case .connecting, .pairing:
                     break
                 }
-                tick += 1
-                try? await Task.sleep(for: .seconds(1))
+                // Smooth mode starts the next capture as soon as one finishes, but
+                // only while the picture is live; everything else ticks once a second.
+                let smooth = smoothPreview && status == .connected && !screenIsProtected
+                let interval: Duration = smooth ? .milliseconds(100) : .seconds(1)
+                try? await Task.sleep(until: started + interval, clock: clock)
             }
         }
     }
