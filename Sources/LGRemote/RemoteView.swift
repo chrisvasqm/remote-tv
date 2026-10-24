@@ -11,15 +11,15 @@ struct RemoteView: View {
     @State private var draftHost = ""
     @FocusState private var remoteFocused: Bool
 
-    private static let panelWidth: CGFloat = 360
-    private static let padding: CGFloat = 16
+    private static let panelWidth: CGFloat = 280
+    private static let padding: CGFloat = 14
     /// The menu-bar window sizes itself to its content, so the 16:9 preview needs a fixed size.
     private static let previewWidth = panelWidth - 2 * padding
 
     private static let presets = ["Bedtime in 10 min", "Dinner is ready", "Screen time is over"]
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             header
             if showSettings {
                 settings
@@ -58,7 +58,7 @@ struct RemoteView: View {
                 powerKey
             }
             Circle().fill(statusColor).frame(width: 6, height: 6)
-            Text(statusText).font(.callout.weight(.medium)).foregroundStyle(Remote.label)
+            Text(statusText).font(.caption.weight(.medium)).foregroundStyle(Remote.label)
             Spacer()
             if model.status == .connected { inputMenu }
         }
@@ -78,14 +78,14 @@ struct RemoteView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "power").font(.system(size: 13, weight: .bold))
-                if powerArmed { Text("Turn off?").font(.callout.weight(.semibold)).fixedSize() }
+                Image(systemName: "power").font(.system(size: 11, weight: .bold))
+                if powerArmed { Text("Turn off?").font(.caption.weight(.semibold)).fixedSize() }
             }
             .padding(.horizontal, powerArmed ? 12 : 0)
         }
         .buttonStyle(KeyStyle(
             shape: powerArmed ? .capsule : .circle,
-            size: CGSize(width: 32, height: 32),
+            size: CGSize(width: 26, height: 26),
             fill: powerArmed ? Remote.powerArmed : Remote.power
         ))
         .fixedSize()
@@ -150,7 +150,7 @@ struct RemoteView: View {
     // MARK: - Controls
 
     private var controls: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 8) {
             HStack {
                 rocker(volumeText.isEmpty ? "Vol" : volumeText, up: ("plus", "Volume up", model.volumeUp), down: ("minus", "Volume down", model.volumeDown))
                 Spacer()
@@ -159,15 +159,15 @@ struct RemoteView: View {
                 rocker("Ch", up: ("chevron.up", "Channel up", { model.press("CHANNELUP") }),
                        down: ("chevron.down", "Channel down", { model.press("CHANNELDOWN") }))
             }
-            .padding(.horizontal, 6)
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 key("arrow.uturn.backward", "Back (Delete)") { model.press("BACK") }
                 key("house.fill", "Home") { model.press("HOME") }
                 key("gearshape.fill", "TV settings") { model.press("MENU") }
                 key(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill", "Mute") {
                     model.toggleMute()
                 }
-                Spacer(minLength: 0)
+            }
+            HStack(spacing: 12) {
                 key("play.fill", "Play") { model.play() }
                 key("pause.fill", "Pause (Space)") { model.pause() }
                 key("stop.fill", "Stop") { model.stop() }
@@ -194,20 +194,20 @@ struct RemoteView: View {
 
     /// The wheel: four arrows around a round OK key, like the remote's navigation ring.
     private var dpad: some View {
-        let ring: CGFloat = 140
-        let arrow = CGSize(width: 44, height: 44)
+        let ring: CGFloat = 116
+        let arrow = CGSize(width: 34, height: 34)
         return ZStack {
             Circle().fill(Remote.key)
                 .overlay(Circle().strokeBorder(Remote.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
-            arrowKey("chevron.up", "Up (↑)", "UP", arrow).offset(y: -(ring / 2 - 22))
-            arrowKey("chevron.down", "Down (↓)", "DOWN", arrow).offset(y: ring / 2 - 22)
-            arrowKey("chevron.left", "Left (←)", "LEFT", arrow).offset(x: -(ring / 2 - 22))
-            arrowKey("chevron.right", "Right (→)", "RIGHT", arrow).offset(x: ring / 2 - 22)
+            arrowKey("chevron.up", "Up (↑)", "UP", arrow).offset(y: -(ring / 2 - 18))
+            arrowKey("chevron.down", "Down (↓)", "DOWN", arrow).offset(y: ring / 2 - 18)
+            arrowKey("chevron.left", "Left (←)", "LEFT", arrow).offset(x: -(ring / 2 - 18))
+            arrowKey("chevron.right", "Right (→)", "RIGHT", arrow).offset(x: ring / 2 - 18)
             Button { model.press("ENTER") } label: {
-                Text("OK").font(.system(size: 15, weight: .semibold))
+                Text("OK").font(.system(size: 13, weight: .semibold))
             }
-            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 58, height: 58), fill: Remote.okKey))
+            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 46, height: 46), fill: Remote.okKey))
             .help("OK (Return)")
         }
         .frame(width: ring, height: ring)
@@ -215,7 +215,7 @@ struct RemoteView: View {
 
     private func arrowKey(_ symbol: String, _ help: String, _ button: String, _ size: CGSize) -> some View {
         Button { model.press(button) } label: {
-            Image(systemName: symbol).font(.system(size: 15, weight: .bold))
+            Image(systemName: symbol).font(.system(size: 12, weight: .bold))
         }
         .buttonStyle(KeyStyle(shape: .circle, size: size, fill: .clear))
         .help(help)
@@ -230,11 +230,11 @@ struct RemoteView: View {
     ) -> some View {
         VStack(spacing: 0) {
             rockerHalf(up)
-            Text(name).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(Remote.label.opacity(0.6))
+            Text(name).font(.caption2.weight(.semibold).monospacedDigit()).foregroundStyle(Remote.label.opacity(0.6))
                 .accessibilityHidden(true)
             rockerHalf(down)
         }
-        .frame(width: 48)
+        .frame(width: 38)
         .padding(.vertical, 2)
         .background(Capsule().fill(Remote.key).overlay(Capsule().strokeBorder(Remote.edge, lineWidth: 1)))
         .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
@@ -242,9 +242,9 @@ struct RemoteView: View {
 
     private func rockerHalf(_ half: (symbol: String, help: String, action: () -> Void)) -> some View {
         Button(action: half.action) {
-            Image(systemName: half.symbol).font(.system(size: 14, weight: .bold))
+            Image(systemName: half.symbol).font(.system(size: 11, weight: .bold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 44, height: 40), fill: .clear))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 36, height: 32), fill: .clear))
         .help(half.help)
         .accessibilityLabel(half.help)
     }
@@ -264,11 +264,11 @@ struct RemoteView: View {
 
     // MARK: - Apps
 
-    /// The app shortcut keys at the bottom of the remote, four to a row.
+    /// The app shortcut keys at the bottom of the remote, three to a row.
     /// A short last row is centred, the way keys sit on a remote.
     private var appKeys: some View {
-        let columns = 4
-        let spacing: CGFloat = 6
+        let columns = 3
+        let spacing: CGFloat = 5
         let width = (Self.previewWidth - spacing * CGFloat(columns - 1)) / CGFloat(columns)
         let apps = launchableApps
         let rows = stride(from: 0, to: apps.count, by: columns).map { Array(apps[$0..<min($0 + columns, apps.count)]) }
@@ -277,11 +277,11 @@ struct RemoteView: View {
                 HStack(spacing: spacing) {
                     ForEach(row) { app in
                         Button { model.launch(app) } label: {
-                            Text(app.title).font(.caption.weight(.semibold))
+                            Text(app.title).font(.caption2.weight(.semibold))
                                 .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 4)
                         }
                         .buttonStyle(KeyStyle(
-                            shape: .capsule, size: CGSize(width: width, height: 26),
+                            shape: .capsule, size: CGSize(width: width, height: 22),
                             fill: app.id == model.foregroundAppId ? Remote.active : Remote.key
                         ))
                         .frame(width: width)
@@ -387,9 +387,9 @@ struct RemoteView: View {
 
     private func key(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 14, weight: .semibold))
+            Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 36, height: 36), fill: Remote.key))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 30, height: 30), fill: Remote.key))
         .help(help)
         .accessibilityLabel(help)
     }
