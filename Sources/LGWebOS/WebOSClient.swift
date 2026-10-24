@@ -172,7 +172,7 @@ public actor WebOSClient: TV {
     /// limited to that host. Internal, not private, so tests can check it.
     func onTVHost(_ string: String) -> URL? {
         guard var components = URLComponents(string: string) else { return nil }
-        if components.scheme == "ws" || components.scheme == "wss" { components.scheme = "wss" } else { components.scheme = "https" }
+        components.scheme = components.scheme == "ws" || components.scheme == "wss" ? "wss" : "https"
         components.host = host
         components.port = Self.port
         return components.url
@@ -184,7 +184,9 @@ public actor WebOSClient: TV {
         let id = "\(type)_\(nextId)"
         var message: JSON = ["id": id, "type": type, "payload": payload]
         if let uri { message["uri"] = uri }
-        let text = String(decoding: try JSONSerialization.data(withJSONObject: message), as: UTF8.self)
+        guard let text = String(bytes: try JSONSerialization.data(withJSONObject: message), encoding: .utf8) else {
+            throw TVError.badResponse("request could not be encoded")
+        }
 
         return try await withCheckedThrowingContinuation { continuation in
             let timer = Task {
@@ -210,7 +212,9 @@ public actor WebOSClient: TV {
         }
     }
 
-    private func handle(_ result: Result<URLSessionWebSocketTask.Message, Error>, from task: URLSessionWebSocketTask) async {
+    private func handle(
+        _ result: Result<URLSessionWebSocketTask.Message, Error>, from task: URLSessionWebSocketTask
+    ) async {
         switch result {
         case .failure(let error) where task === socket:
             close(failing: error)

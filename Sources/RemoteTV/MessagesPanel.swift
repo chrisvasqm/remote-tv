@@ -1,12 +1,12 @@
-import RemoteTVCore
 import SwiftUI
 
-extension RemoteView {
+/// Shows a short message on the TV: a few presets, or any text.
+struct MessagesPanel: View {
+    let model: RemoteModel
+    @State private var message = ""
     private static let presets = ["Bedtime in 10 min", "Dinner is ready", "Screen time is over"]
 
-    // MARK: - Messages
-
-    var messages: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 ForEach(Self.presets, id: \.self) { preset in
@@ -17,8 +17,8 @@ extension RemoteView {
             HStack {
                 TextField("Your message", text: $message)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit(sendMessage)
-                Button("Show", action: sendMessage).disabled(trimmedMessage.isEmpty)
+                    .onSubmit(send)
+                Button("Show", action: send).disabled(trimmedMessage.isEmpty)
             }
             if let sent = model.lastMessageSent {
                 Label("Shown on the TV: \(sent)", systemImage: "checkmark.circle")
@@ -31,7 +31,7 @@ extension RemoteView {
 
     private var trimmedMessage: String { message.trimmingCharacters(in: .whitespaces) }
 
-    private func sendMessage() {
+    private func send() {
         guard !trimmedMessage.isEmpty else { return }
         model.showMessage(trimmedMessage)
         message = ""

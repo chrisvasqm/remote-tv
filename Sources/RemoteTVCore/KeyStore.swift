@@ -14,7 +14,8 @@ public protocol KeyStore: Sendable {
     func setMac(_ mac: String, for host: String)
 }
 
-/// Stores one file per TV and value (`<host>.key`, `.pin`, `.mac`) in a directory only the user can read (700, files 600).
+/// Stores one file per TV and value (`<host>.key`, `.pin`, `.mac`) in a directory only
+/// the user can read (700, files 600).
 /// No Keychain, so macOS never asks for permission; any process running as the
 /// user can read the key, which is the accepted trade-off.
 public struct FileKeyStore: KeyStore {
@@ -58,7 +59,9 @@ public struct FileKeyStore: KeyStore {
 
     private func write(_ value: String, to url: URL) {
         let manager = FileManager.default
-        try? manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? manager.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
         // Write a temporary file, then rename it over the old one, so a crash never leaves no file.
         let temp = directory.appendingPathComponent("." + url.lastPathComponent + ".tmp")
         try? manager.removeItem(at: temp)

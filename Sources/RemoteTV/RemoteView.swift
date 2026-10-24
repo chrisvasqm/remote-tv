@@ -1,70 +1,45 @@
 import RemoteTVCore
 import SwiftUI
 
+/// The menu-bar panel, drawn as a TV remote. Each section is its own view, so a new
+/// live-view frame redraws only the preview.
 struct RemoteView: View {
     let model: RemoteModel
-    @State var message = ""
-    /// The first press arms the power key; a second press within a few seconds turns the TV off.
-    @State var powerArmed = false
-    @State var showSettings = false
+    @State private var showSettings = false
     @State private var showMessages = false
-    @State var draftHost = ""
-    @FocusState var remoteFocused: Bool
-
-    private static let panelWidth: CGFloat = 280
-    private static let padding: CGFloat = 14
-    /// The menu-bar window sizes itself to its content, so the 16:9 preview needs a fixed size.
-    static let previewWidth = panelWidth - 2 * padding
+    /// Kept here, so an address typed but not saved survives closing Settings.
+    @State private var draftHost = ""
 
     var body: some View {
         VStack(spacing: 10) {
-            header
+            HeaderBar(model: model)
             if showSettings {
-                settings
+                SettingsPanel(model: model, isShown: $showSettings, draftHost: $draftHost)
             } else if model.status == .connected {
-                if can(.screenshot) { screen }
-                controls
-                if can(.apps) { appKeys }
-                if showMessages { messages }
+                if brand.supports(.screenshot) { ScreenPreview(model: model) }
+                ControlsPanel(model: model)
+                if brand.supports(.apps) { AppKeys(model: model) }
+                if showMessages { MessagesPanel(model: model) }
             } else {
-                offline
+                OfflinePanel(model: model)
             }
             if let error = model.lastError {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(RemotePalette.label.opacity(0.7)).lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            footer
+            FooterBar(model: model, showSettings: $showSettings, showMessages: $showMessages)
         }
-        .padding(Self.padding)
-        .frame(width: Self.panelWidth)
+        .padding(PanelMetrics.padding)
+        .frame(width: PanelMetrics.panelWidth)
         .background(RemotePalette.body)
         .environment(\.colorScheme, .dark)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
-        .onAppear {
-            draftHost = model.host
-            if model.host.isEmpty { showSettings = true }
-        }
+        .onAppear(perform: loadHost)
     }
 
-    private var footer: some View {
-        HStack {
-            Button(showSettings ? "Done" : "Settings") { showSettings.toggle() }
-            if model.status == .connected && !showSettings && can(.messages) {
-                Button(showMessages ? "Hide message" : "Message") { showMessages.toggle() }
-                    .help("Show a message on the TV")
-            }
-            Spacer()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-        }
-        .buttonStyle(.borderless)
-        .font(.caption)
-        .foregroundStyle(RemotePalette.label.opacity(0.6))
-    }
-
-    // MARK: - Helpers
-
-    func can(_ capability: TVCapabilities) -> Bool {
-        brand.supports(capability)
+    private func loadHost() {
+        draftHost = model.host
+        if model.host.isEmpty { showSettings = true }
     }
 }

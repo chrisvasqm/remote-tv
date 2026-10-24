@@ -154,7 +154,8 @@ public enum TVError: LocalizedError {
         case .notConnected: return "Not connected to the TV."
         case .invalidAddress(let host): return "\"\(host)\" is not a valid TV address."
         case .certificateChanged:
-            return "The TV at this address has a different security certificate than when it was paired. If you reset or replaced the TV, unpair this Mac and pair again."
+            return "The TV at this address has a different security certificate than when it was paired. "
+                + "If you reset or replaced the TV, unpair this Mac and pair again."
         case .pairingRejected(let reason): return "The TV refused pairing: \(reason)"
         case .timeout(let what): return "The TV did not answer: \(what)"
         case .tv(let message): return "The TV answered with an error: \(message)"
