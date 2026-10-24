@@ -41,6 +41,13 @@ final class RemoteModel {
     var framesPerSecond: Double?
     private var clientHost = ""
     var pollTask: Task<Void, Never>?
+    /// Poll loops that were cancelled but may still be finishing a request.
+    var endingPolls = 0
+    var wakeTask: Task<Void, Never>?
+    /// Counts screen off/on requests. A screen state read while one ran, or one started,
+    /// may be stale, so `refreshInfo` drops it.
+    var screenRequestsStarted = 0
+    var screenRequestsRunning = 0
     var lastFrame: Data?
     var refreshSoon = false
 
@@ -53,6 +60,9 @@ final class RemoteModel {
     func setHost(_ newHost: String) async {
         let trimmed = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Saving the same address must not drop a working connection.
+        if trimmed == host && status == .connected { return }
+        if trimmed != host { stopWaking() }
         host = trimmed
         UserDefaults.standard.set(host, forKey: "tvHost")
         await reconnect()
@@ -147,6 +157,7 @@ final class RemoteModel {
         inputs = []
         foregroundAppId = nil
         volume = nil
+        screenIsOff = false
     }
 
     private func clientDropped(_ dropped: any TV) {
@@ -162,6 +173,7 @@ final class RemoteModel {
     }
 
     func forgetPairing() {
+        stopWaking()
         keyStore.removeKey(for: clientHost.isEmpty ? host : clientHost)
         dropClient()
         clientHost = ""
