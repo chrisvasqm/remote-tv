@@ -44,8 +44,9 @@ final class RemoteModel {
     /// A poll loop that was cancelled but may still be finishing a request.
     var stoppingPoll: Task<Void, Never>?
     var wakeTask: Task<Void, Never>?
-    /// True while a screen off/on request runs, so a poll started earlier can't undo it.
-    var screenChangeInFlight = false
+    /// Changes when a screen off/on request starts and ends. A screen state read while
+    /// it changed may be stale, so `refreshInfo` drops it.
+    var screenGeneration = 0
     var lastFrame: Data?
     var refreshSoon = false
 
@@ -60,6 +61,7 @@ final class RemoteModel {
         guard !trimmed.isEmpty else { return }
         // Saving the same address must not drop a working connection.
         if trimmed == host && status == .connected { return }
+        if trimmed != host { stopWaking() }
         host = trimmed
         UserDefaults.standard.set(host, forKey: "tvHost")
         await reconnect()
@@ -154,6 +156,7 @@ final class RemoteModel {
         inputs = []
         foregroundAppId = nil
         volume = nil
+        screenIsOff = false
     }
 
     private func clientDropped(_ dropped: any TV) {
@@ -169,6 +172,7 @@ final class RemoteModel {
     }
 
     func forgetPairing() {
+        stopWaking()
         keyStore.removeKey(for: clientHost.isEmpty ? host : clientHost)
         dropClient()
         clientHost = ""

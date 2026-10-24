@@ -21,8 +21,9 @@ extension RemoteModel {
         stoppingPoll = nil
         // Holds the model strongly; stopPolling() cancels the loop when the panel closes.
         pollTask = Task {
-            // One loop at a time: the TV captures every frame into the same file.
-            await previous?.value
+            // The TV captures every frame into the same file, so let a capture of the old
+            // loop finish first. Capped, so a slow request can't freeze the reopened panel.
+            if let previous { await Self.wait(for: previous, upTo: .seconds(1)) }
             let clock = ContinuousClock()
             var lastInfo = clock.now - .seconds(60)
             var lastConnect = clock.now - .seconds(60)
@@ -58,13 +59,25 @@ extension RemoteModel {
     }
 
     private func stopPolling() {
-        pollTask?.cancel()
+        // The panel can report "hidden" twice; keep the loop that is still ending.
+        guard let pollTask else { return }
+        pollTask.cancel()
         stoppingPoll = pollTask
-        pollTask = nil
+        self.pollTask = nil
+    }
+
+    private static func wait(for task: Task<Void, Never>, upTo limit: Duration) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await task.value }
+            group.addTask { try? await Task.sleep(for: limit) }
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     func refreshInfo() async {
         guard let client else { return }
+        let generation = screenGeneration
         do {
             async let app = client.foregroundAppId()
             async let volume = client.volume()
@@ -75,7 +88,7 @@ extension RemoteModel {
             // Assign only changes, so an unchanged TV doesn't redraw the panel every 3 seconds.
             if foregroundAppId != appId { foregroundAppId = appId }
             if self.volume != level { self.volume = level }
-            if let off, !screenChangeInFlight, screenIsOff != off { screenIsOff = off }
+            if let off, screenGeneration == generation, screenIsOff != off { screenIsOff = off }
         } catch {
             await report(error, from: client)
         }

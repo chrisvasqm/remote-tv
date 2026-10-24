@@ -4,6 +4,7 @@ import RemoteTVCore
 extension RemoteModel {
     func turnOff() {
         guard let client else { return }
+        stopWaking()
         self.client = nil
         autoReconnect = false
         status = .unreachable
@@ -42,6 +43,7 @@ extension RemoteModel {
                     do {
                         try WakeOnLAN.send(mac: mac, host: target)
                     } catch {
+                        guard !Task.isCancelled else { return }
                         lastError = error.localizedDescription
                         isWaking = false
                         return
@@ -58,5 +60,12 @@ extension RemoteModel {
                 lastError = "The TV did not turn on. \(brand.wakeHelp)"
             }
         }
+    }
+
+    /// Ends a wake that is running, for Turn off, unpairing or another TV.
+    func stopWaking() {
+        wakeTask?.cancel()
+        wakeTask = nil
+        isWaking = false
     }
 }

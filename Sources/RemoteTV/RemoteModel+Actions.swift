@@ -32,24 +32,34 @@ extension RemoteModel {
         setScreenOff(false) { try await $0.setScreen(on: true) }
     }
 
-    /// Shows the new screen state at once, and puts the old one back if the TV refuses.
+    /// Shows the new screen state at once, and puts the old one back if the TV refuses,
+    /// unless a newer screen change started meanwhile.
     private func setScreenOff(_ off: Bool, _ action: @escaping (any TV) async throws -> Void) {
-        guard client != nil else { return }
+        guard let client else { return }
         let previous = screenIsOff
         screenIsOff = off
-        screenChangeInFlight = true
-        run(action, onSuccess: { $0.screenChangeInFlight = false }, onFailure: {
-            $0.screenChangeInFlight = false
-            if $0.screenIsOff == off { $0.screenIsOff = previous }
-        })
+        screenGeneration += 1
+        let generation = screenGeneration
+        Task {
+            // A screen state read while this request ran may be from before it.
+            defer { screenGeneration += 1 }
+            do {
+                try await action(client)
+                guard client === self.client else { return }
+                refreshSoon = true
+                lastError = nil
+            } catch {
+                if client === self.client, screenGeneration == generation { screenIsOff = previous }
+                await report(error, from: client)
+            }
+        }
     }
 
-    /// Runs an action on the current client. The callbacks run only if that client is
-    /// still the current one; a result from a replaced client says nothing about the new one.
+    /// Runs an action on the current client. `onSuccess` runs only if that client is still
+    /// the current one; a result from a replaced client says nothing about the new one.
     private func run(
         _ action: @escaping (any TV) async throws -> Void,
-        onSuccess: ((RemoteModel) -> Void)? = nil,
-        onFailure: ((RemoteModel) -> Void)? = nil
+        onSuccess: ((RemoteModel) -> Void)? = nil
     ) {
         guard let client else { return }
         Task {
@@ -60,7 +70,6 @@ extension RemoteModel {
                 refreshSoon = true
                 lastError = nil
             } catch {
-                if client === self.client { onFailure?(self) }
                 await report(error, from: client)
             }
         }
