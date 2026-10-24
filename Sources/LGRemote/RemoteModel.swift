@@ -21,6 +21,8 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var foregroundAppId: String?
     @Published private(set) var volume: TVVolume?
     @Published var lastError: String?
+    /// The last message the TV accepted, for a short confirmation in the panel.
+    @Published var lastMessageSent: String?
 
     private let keyStore = KeychainKeyStore()
     private var client: TVClient?
@@ -225,7 +227,12 @@ final class RemoteModel: ObservableObject {
     func volumeUp() { run { try await $0.volumeUp() } }
     func volumeDown() { run { try await $0.volumeDown() } }
     func toggleMute() { run { [muted = volume?.muted ?? false] in try await $0.setMute(!muted) } }
-    func showMessage(_ text: String) { run { try await $0.showMessage(text) } }
+    func showMessage(_ text: String) {
+        run { [weak self] client in
+            try await client.showMessage(text)
+            await MainActor.run { self?.lastMessageSent = text }
+        }
+    }
 
     func closeForegroundApp() {
         guard let id = foregroundAppId, id != TVApp.homeId else { return }
@@ -274,6 +281,7 @@ final class RemoteModel: ObservableObject {
             do {
                 try await action(client)
                 refreshSoon = true
+                lastError = nil
             } catch {
                 await report(error, from: client)
             }

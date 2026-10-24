@@ -7,27 +7,33 @@ struct RemoteView: View {
     @State private var confirmPowerOff = false
     @State private var showSettings = false
     @State private var draftHost = ""
+    @FocusState private var remoteFocused: Bool
+
+    private static let presets = ["Bedtime in 10 min", "Dinner is ready", "Screen time is over"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             if showSettings {
                 settings
             } else if model.status == .connected {
                 screen
                 controls
+                Divider()
                 appGrid
-                messageField
+                Divider()
+                messages
             } else {
                 offline
             }
             if let error = model.lastError {
-                Text(error).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
             footer
         }
-        .padding(14)
-        .frame(width: 360)
+        .padding(16)
+        .frame(width: 380)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
         .onAppear {
             draftHost = model.host
@@ -35,84 +41,122 @@ struct RemoteView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Header
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
             Text(statusText).font(.headline)
             Spacer()
             if model.status == .connected {
-                Text(model.foregroundTitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Button { confirmPowerOff = true } label: {
+                    Image(systemName: "power").font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .help("Turn the TV off")
+                .confirmationDialog("Turn the TV off?", isPresented: $confirmPowerOff) {
+                    Button("Turn off", role: .destructive) { model.turnOff() }
+                }
             }
         }
     }
 
+    // MARK: - Live screen
+
     private var screen: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(.black)
+        ZStack(alignment: .bottomLeading) {
+            Rectangle().fill(.black)
             if let image = model.screenshot {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if model.screenshot == nil || model.screenIsProtected {
                 Label(
-                    model.screenIsProtected ? "Black screen: this app or input may block capture" : "Loading screen…",
-                    systemImage: model.screenIsProtected ? "lock.tv" : "tv"
+                    model.screenIsProtected ? "This app or input hides its picture" : "Loading the screen…",
+                    systemImage: model.screenIsProtected ? "eye.slash" : "tv"
                 )
-                .font(.caption).foregroundStyle(.white.opacity(0.7))
+                .font(.callout).foregroundStyle(.white.opacity(0.75))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            HStack(spacing: 6) {
+                Circle().fill(.red).frame(width: 6, height: 6)
+                Text(model.foregroundTitle).font(.caption.weight(.semibold))
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(.black.opacity(0.6), in: Capsule())
+            .foregroundStyle(.white)
+            .padding(8)
         }
         .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("TV screen, showing \(model.foregroundTitle)")
     }
 
+    // MARK: - Controls
+
     private var controls: some View {
-        HStack(alignment: .center, spacing: 16) {
+        HStack(alignment: .center, spacing: 20) {
             dpad
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
-                    iconButton("backward.end.fill", "Stop") { model.stop() }
-                    iconButton("play.fill", "Play") { model.play() }
-                    iconButton("pause.fill", "Pause") { model.pause() }
+                    remoteButton("play.fill", "Play") { model.play() }
+                    remoteButton("pause.fill", "Pause (Space)") { model.pause() }
+                    remoteButton("stop.fill", "Stop") { model.stop() }
                 }
                 HStack(spacing: 6) {
-                    iconButton("speaker.minus.fill", "Volume down") { model.volumeDown() }
-                    iconButton(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.fill", "Mute") {
+                    remoteButton("speaker.minus.fill", "Volume down") { model.volumeDown() }
+                    remoteButton(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.fill", "Mute") {
                         model.toggleMute()
                     }
-                    iconButton("speaker.plus.fill", "Volume up") { model.volumeUp() }
-                }
-                Text(volumeText).font(.caption2).foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    iconButton("house.fill", "Home") { model.press("HOME") }
-                    iconButton("arrow.uturn.backward", "Back") { model.press("BACK") }
-                    iconButton("gearshape.fill", "TV settings") { model.press("MENU") }
+                    remoteButton("speaker.plus.fill", "Volume up") { model.volumeUp() }
+                    Text(volumeText).font(.caption).monospacedDigit().foregroundStyle(.secondary)
                 }
                 HStack(spacing: 6) {
+                    remoteButton("house.fill", "Home") { model.press("HOME") }
+                    remoteButton("arrow.uturn.backward", "Back (Delete)") { model.press("BACK") }
+                    remoteButton("gearshape.fill", "TV settings") { model.press("MENU") }
                     inputMenu
-                    iconButton("xmark.app", "Close current app") { model.closeForegroundApp() }
                 }
             }
         }
+        .focusable()
+        .focused($remoteFocused)
+        .focusEffectDisabled()
+        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow, .return, .delete, .space]) { press in
+            switch press.key {
+            case .upArrow: model.press("UP")
+            case .downArrow: model.press("DOWN")
+            case .leftArrow: model.press("LEFT")
+            case .rightArrow: model.press("RIGHT")
+            case .return: model.press("ENTER")
+            case .delete: model.press("BACK")
+            default: model.pause()
+            }
+            return .handled
+        }
+        .onTapGesture { remoteFocused = true }
     }
 
     private var dpad: some View {
         Grid(horizontalSpacing: 4, verticalSpacing: 4) {
             GridRow {
                 gap
-                iconButton("chevron.up", "Up") { model.press("UP") }
+                remoteButton("chevron.up", "Up (↑)") { model.press("UP") }
                 gap
             }
             GridRow {
-                iconButton("chevron.left", "Left") { model.press("LEFT") }
-                Button("OK") { model.press("ENTER") }
-                    .frame(width: 36, height: 30)
-                    .keyboardShortcut(.return, modifiers: [])
-                iconButton("chevron.right", "Right") { model.press("RIGHT") }
+                remoteButton("chevron.left", "Left (←)") { model.press("LEFT") }
+                Button { model.press("ENTER") } label: {
+                    Text("OK").font(.callout.weight(.semibold)).frame(width: 34, height: 28)
+                }
+                .buttonStyle(.borderedProminent)
+                .help("OK (Return)")
+                remoteButton("chevron.right", "Right (→)") { model.press("RIGHT") }
             }
             GridRow {
                 gap
-                iconButton("chevron.down", "Down") { model.press("DOWN") }
+                remoteButton("chevron.down", "Down (↓)") { model.press("DOWN") }
                 gap
             }
         }
@@ -123,48 +167,87 @@ struct RemoteView: View {
     private var inputMenu: some View {
         Menu {
             ForEach(model.inputs) { input in
-                Button(input.label + (input.connected ? "" : " (nothing connected)")) { model.switchInput(input) }
+                Button(input.label + (input.connected ? "" : " (nothing plugged in)")) { model.switchInput(input) }
             }
         } label: {
-            Image(systemName: "rectangle.connected.to.line.below")
+            Text("Input")
         }
-        .menuStyle(.borderlessButton)
-        .frame(width: 30)
-        .help("Inputs")
+        .menuStyle(.button)
+        .fixedSize()
+        .help("Switch to an HDMI input")
     }
 
+    // MARK: - Apps
+
     private var appGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
-            ForEach(model.apps) { app in
-                Button { model.launch(app) } label: {
-                    Text(app.title).lineLimit(1).frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Open an app").font(.subheadline.weight(.semibold))
+                Spacer()
+                if model.foregroundAppId != TVApp.homeId {
+                    Button("Close \(model.foregroundTitle)") { model.closeForegroundApp() }
+                        .buttonStyle(.borderless).font(.caption)
                 }
-                .buttonStyle(.bordered)
-                .tint(app.id == model.foregroundAppId ? .accentColor : nil)
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                ForEach(launchableApps) { app in
+                    Button { model.launch(app) } label: {
+                        Text(app.title).lineLimit(1).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .tint(app.id == model.foregroundAppId ? .accentColor : nil)
+                }
             }
         }
     }
 
-    private var messageField: some View {
-        HStack {
-            TextField("Message on the TV", text: $message)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit(sendMessage)
-            Button("Send", action: sendMessage).disabled(trimmedMessage.isEmpty)
+    /// HDMI ports are under Input, so they are left out of the app grid.
+    private var launchableApps: [TVApp] {
+        model.apps.filter { !$0.id.hasPrefix("com.webos.app.hdmi") }
+    }
+
+    // MARK: - Messages
+
+    private var messages: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Show a message on the TV").font(.subheadline.weight(.semibold))
+            HStack(spacing: 6) {
+                ForEach(Self.presets, id: \.self) { preset in
+                    Button(preset) { model.showMessage(preset) }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+            HStack {
+                TextField("Your message", text: $message)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(sendMessage)
+                Button("Show", action: sendMessage).disabled(trimmedMessage.isEmpty)
+            }
+            if let sent = model.lastMessageSent {
+                Label("Shown on the TV: \(sent)", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
     }
 
+    // MARK: - Offline and settings
+
     private var offline: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(offlineText).font(.callout).fixedSize(horizontal: false, vertical: true)
             HStack {
-                if model.status == .networkBlocked {
+                switch model.status {
+                case .networkBlocked:
                     Button("Open Local Network settings") { LocalNetworkAccess.openSettings() }
-                } else {
-                    Button("Turn TV on") { model.turnOn() }
+                        .buttonStyle(.borderedProminent)
+                case .pairing, .connecting:
+                    ProgressView().controlSize(.small)
+                default:
+                    Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
                 }
                 if model.status != .pairing && model.status != .connecting {
-                    Button("Reconnect") { Task { await model.reconnect() } }
+                    Button("Try again") { Task { await model.reconnect() } }
                 }
             }
         }
@@ -172,16 +255,19 @@ struct RemoteView: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TV address").font(.caption).foregroundStyle(.secondary)
+            Text("TV address").font(.subheadline.weight(.semibold))
             TextField("192.168.0.10", text: $draftHost)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveSettings)
-            Text("On the TV: Settings > Support > TV information shows the address. Accept the prompt on the TV the first time.")
-                .font(.caption).foregroundStyle(.secondary)
+            Text("Find it on the TV under Settings > Support > TV information. The first time, accept the prompt on the TV with its remote.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Connect", action: saveSettings)
+                    .buttonStyle(.borderedProminent)
                     .disabled(draftHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                Button("Forget pairing") { model.forgetPairing() }
+                Spacer()
+                Button("Unpair this Mac", role: .destructive) { model.forgetPairing() }
+                    .help("Remove the saved pairing. The TV asks again next time.")
             }
         }
     }
@@ -190,25 +276,21 @@ struct RemoteView: View {
         HStack {
             Button(showSettings ? "Done" : "Settings") { showSettings.toggle() }
             Spacer()
-            if model.status == .connected {
-                Button("Turn off", role: .destructive) { confirmPowerOff = true }
-                    .confirmationDialog("Turn the TV off?", isPresented: $confirmPowerOff) {
-                        Button("Turn off", role: .destructive) { model.turnOff() }
-                    }
-            }
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
         .buttonStyle(.borderless)
         .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - Helpers
 
-    private func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
+    private func remoteButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).frame(width: 22, height: 18)
+            Image(systemName: symbol).frame(width: 26, height: 22)
         }
         .help(help)
+        .accessibilityLabel(help)
     }
 
     private var trimmedMessage: String { message.trimmingCharacters(in: .whitespaces) }
@@ -225,17 +307,17 @@ struct RemoteView: View {
     }
 
     private var volumeText: String {
-        guard let volume = model.volume else { return "Volume –" }
-        return volume.muted ? "Muted" : "Volume \(volume.level)"
+        guard let volume = model.volume else { return "" }
+        return volume.muted ? "Muted" : "\(volume.level)"
     }
 
     private var statusText: String {
         switch model.status {
         case .idle: return "LG TV"
         case .connecting: return "Connecting…"
-        case .pairing: return "Accept the prompt on the TV"
-        case .connected: return "TV on"
-        case .unreachable: return "TV off or unreachable"
+        case .pairing: return "Waiting for the TV"
+        case .connected: return "TV is on"
+        case .unreachable: return "TV is off or out of reach"
         case .networkBlocked: return "Local Network access needed"
         }
     }
@@ -243,11 +325,13 @@ struct RemoteView: View {
     private var offlineText: String {
         switch model.status {
         case .pairing:
-            return "The TV is asking to allow this Mac. Accept it with the TV remote."
+            return "The TV is asking whether to allow this Mac. Accept it with the TV remote."
+        case .connecting:
+            return "Connecting to the TV at \(model.host)."
         case .networkBlocked:
-            return "macOS is blocking LG Remote from the local network. Turn on LG Remote under Privacy & Security > Local Network, then reconnect."
+            return "macOS blocks LG Remote from your local network. Turn on LG Remote under Privacy & Security > Local Network, then try again."
         default:
-            return "Can't reach the TV at \(model.host). It may be off or on another network."
+            return "Can't reach the TV at \(model.host). If it is off, turn it on here. Otherwise check that the Mac and the TV are on the same Wi-Fi."
         }
     }
 
@@ -255,8 +339,8 @@ struct RemoteView: View {
         switch model.status {
         case .connected: return .green
         case .connecting, .pairing: return .orange
-        case .idle, .unreachable: return .gray
         case .networkBlocked: return .red
+        case .idle, .unreachable: return .gray
         }
     }
 }
