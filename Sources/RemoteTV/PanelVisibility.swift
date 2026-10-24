@@ -20,6 +20,10 @@ struct PanelVisibility: NSViewRepresentable {
         var onChange: ((Bool) -> Void)?
         private var observers: [NSObjectProtocol] = []
 
+        deinit {
+            observers.forEach(NotificationCenter.default.removeObserver)
+        }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             observers.forEach(NotificationCenter.default.removeObserver)
@@ -30,7 +34,7 @@ struct PanelVisibility: NSViewRepresentable {
                 ) { [weak self, weak window] _ in
                     guard let window else { return }
                     self?.onChange?(window.occlusionState.contains(.visible))
-                },
+                }
             ] + [NSWindow.didResizeNotification, NSWindow.didMoveNotification].map { name in
                 NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     self?.fitSoon()
@@ -50,7 +54,7 @@ struct PanelVisibility: NSViewRepresentable {
         /// SwiftUI places the window after these events, so fit it on the next turn:
         /// as tall as the content, with its top edge under the menu bar.
         private func fitSoon() {
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 guard let self, let window, let top = window.screen?.visibleFrame.maxY,
                       bounds.height > 0 else { return }
                 let content = NSRect(x: window.frame.minX, y: 0, width: window.frame.width, height: bounds.height)

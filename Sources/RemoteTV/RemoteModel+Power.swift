@@ -33,7 +33,12 @@ extension RemoteModel {
             while clock.now < deadline && status != .connected {
                 // Repeat the packet a few times in case one is lost on Wi-Fi.
                 if attempt < 3 {
-                    do { try WakeOnLAN.send(mac: mac, host: host) } catch { lastError = error.localizedDescription; return }
+                    do {
+                        try WakeOnLAN.send(mac: mac, host: host)
+                    } catch {
+                        lastError = error.localizedDescription
+                        return
+                    }
                 }
                 attempt += 1
                 try? await Task.sleep(for: .seconds(3))

@@ -8,7 +8,11 @@ extension RemoteModel {
     /// app/volume info every 3 seconds or right after an action. When the TV is
     /// unreachable it retries the connection every 10 seconds.
     func panelVisibilityChanged(_ visible: Bool) {
-        visible ? startPolling() : stopPolling()
+        if visible {
+            startPolling()
+        } else {
+            stopPolling()
+        }
     }
 
     private func startPolling() {
@@ -88,7 +92,8 @@ extension RemoteModel {
                 // An unchanged black frame still counts toward "protected".
                 if blackFrames > 0 { blackFrames += 1 }
             } else {
-                guard let frame = await Frame.decode(data, width: RemoteView.previewWidth), client === self.client else { return }
+                guard let frame = await Frame.decode(data, width: PanelMetrics.previewWidth),
+                      client === self.client else { return }
                 lastFrame = data
                 blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
                 screenshot = frame.image

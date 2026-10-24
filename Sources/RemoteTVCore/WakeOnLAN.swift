@@ -30,7 +30,8 @@ public enum WakeOnLAN {
                 let sent = packet.withUnsafeBytes { buffer in
                     withUnsafePointer(to: &address) {
                         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                            sendto(fd, buffer.baseAddress, buffer.count, 0, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                            let length = socklen_t(MemoryLayout<sockaddr_in>.size)
+                            return sendto(fd, buffer.baseAddress, buffer.count, 0, $0, length)
                         }
                     }
                 }
@@ -67,7 +68,8 @@ public enum WakeOnLAN {
             next = interface.ifa_next
             let flags = Int32(interface.ifa_flags)
             guard flags & IFF_UP != 0, flags & IFF_BROADCAST != 0, flags & IFF_LOOPBACK == 0,
-                  let broadcast = interface.ifa_dstaddr, broadcast.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+                  let broadcast = interface.ifa_dstaddr,
+                  broadcast.pointee.sa_family == sa_family_t(AF_INET) else { continue }
             result.append(broadcast.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr })
         }
         return result
@@ -86,7 +88,9 @@ public enum WakeOnLAN {
         process.standardOutput = pipe
         guard (try? process.run()) != nil else { return nil }
         process.waitUntilExit()
-        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        guard let output = String(bytes: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) else {
+            return nil
+        }
         // arp drops leading zeros ("2:f:b5:..."); parseMAC accepts that, and the result is padded.
         let bytes = output.split(whereSeparator: \.isWhitespace).lazy.compactMap { parseMAC(String($0)) }.first
         return bytes?.map { String(format: "%02x", $0) }.joined(separator: ":")

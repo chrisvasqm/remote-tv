@@ -11,8 +11,10 @@ public struct LGWebOSBrand: TVBrand {
     ]
     /// The webOS Home screen; reported as the foreground app when nothing else runs.
     public let homeAppId: String? = "com.webos.app.home"
-    public let addressHelp = "Find it on the TV under Settings > Support > TV information. The first time, accept the prompt on the TV with its remote."
-    public let wakeHelp = "Check that Turn on via Wi-Fi is on in the TV's settings, under General > Devices > TV On With Mobile."
+    public let addressHelp = "Find it on the TV under Settings > Support > TV information. "
+        + "The first time, accept the prompt on the TV with its remote."
+    public let wakeHelp = "Check that Turn on via Wi-Fi is on in the TV's settings, "
+        + "under General > Devices > TV On With Mobile."
 
     public func makeTV(host: String, keyStore: KeyStore) -> any TV {
         WebOSClient(host: host, keyStore: keyStore)
@@ -100,7 +102,8 @@ public extension WebOSClient {
     /// Turns only the picture off or back on. The TV stays on and connected, so it
     /// wakes instantly and never needs Wake-on-LAN.
     func setScreen(on: Bool) async throws {
-        try await request("ssap://com.webos.service.tvpower/power/\(on ? "turnOnScreen" : "turnOffScreen")", ["standbyMode": "active"])
+        let action = on ? "turnOnScreen" : "turnOffScreen"
+        try await request("ssap://com.webos.service.tvpower/power/\(action)", ["standbyMode": "active"])
     }
 
     func screenIsOff() async throws -> Bool {

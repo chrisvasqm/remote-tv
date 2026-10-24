@@ -1,21 +1,22 @@
-import RemoteTVCore
 import SwiftUI
 
-extension RemoteView {
-    // MARK: - Live screen
+/// The live view of the TV screen, with the current app and the frame rate on top.
+/// Its own view, so a new frame redraws only the preview and not the whole panel.
+struct ScreenPreview: View {
+    let model: RemoteModel
 
-    var screen: some View {
+    var body: some View {
         Color.black
-            .frame(width: Self.previewWidth, height: Self.previewWidth * 9 / 16)
+            .frame(width: PanelMetrics.previewWidth, height: PanelMetrics.previewWidth * 9 / 16)
             .overlay {
                 if let image = model.screenshot {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                    Image(nsImage: image).resizable().scaledToFit()
                 }
                 if model.screenIsOff {
                     VStack(spacing: 8) {
                         Label("The screen is off", systemImage: "moon.fill")
                             .font(.callout).foregroundStyle(.white.opacity(0.75))
-                        Button("Turn the screen on") { model.turnScreenOn() }
+                        Button("Turn the screen on", action: model.turnScreenOn)
                             .buttonStyle(.borderedProminent).controlSize(.small)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -33,33 +34,32 @@ extension RemoteView {
                     Circle().fill(.red).frame(width: 6, height: 6)
                     Text(model.foregroundTitle).font(.caption.weight(.semibold))
                     if !model.isHome {
-                        Button { model.closeForegroundApp() } label: {
-                            Image(systemName: "xmark").font(.caption2.weight(.bold))
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Close \(model.foregroundTitle)")
-                        .accessibilityLabel("Close \(model.foregroundTitle)")
+                        Button("Close \(model.foregroundTitle)", systemImage: "xmark", action: model.closeForegroundApp)
+                            .labelStyle(.iconOnly)
+                            .font(.caption2.weight(.bold))
+                            .buttonStyle(.borderless)
+                            .help("Close \(model.foregroundTitle)")
                     }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(.black.opacity(0.6), in: Capsule())
+                .background(.black.opacity(0.6), in: .capsule)
                 .foregroundStyle(.white)
                 .padding(8)
             }
             .overlay(alignment: .bottomTrailing) {
                 if let fps = model.framesPerSecond {
-                    Text(String(format: "%.1f fps", fps))
+                    Text("\(fps, format: .number.precision(.fractionLength(1))) fps")
                         .font(.caption2.monospacedDigit())
                         .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(.black.opacity(0.6), in: Capsule())
+                        .background(.black.opacity(0.6), in: .capsule)
                         .foregroundStyle(.white.opacity(0.8))
                         .padding(8)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(.rect(cornerRadius: 8))
             // A bezel, so the preview reads as the TV's screen set into the remote.
             .padding(4)
-            .background(Color.black, in: RoundedRectangle(cornerRadius: 12))
+            .background(Color.black, in: .rect(cornerRadius: 12))
             .accessibilityElement(children: .combine)
             .accessibilityLabel("TV screen, showing \(model.foregroundTitle)")
     }
