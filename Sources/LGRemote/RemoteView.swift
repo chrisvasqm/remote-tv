@@ -76,12 +76,15 @@ struct RemoteView: View {
         Color.black
             .frame(width: Self.previewWidth, height: Self.previewWidth * 9 / 16)
             .overlay {
+                // Each frame fades in over the previous one, which stays opaque underneath,
+                // so ~3 captures a second read as motion without dimming mid-fade.
+                if let image = model.previousScreenshot {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                }
                 if let image = model.screenshot {
-                    // Each frame fades into the next over about one frame interval,
-                    // so ~3 captures a second read as motion instead of jumps.
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
                         .id(model.frameNumber)
-                        .transition(.opacity)
+                        .transition(.asymmetric(insertion: .opacity, removal: .identity))
                 }
                 if model.screenshot == nil || model.screenIsProtected {
                     Label(

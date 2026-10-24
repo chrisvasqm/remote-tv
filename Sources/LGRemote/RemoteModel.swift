@@ -15,6 +15,8 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var host: String
     @Published private(set) var status: Status = .idle
     @Published private(set) var screenshot: NSImage?
+    /// The frame before `screenshot`, kept opaque underneath while the new one fades in.
+    @Published private(set) var previousScreenshot: NSImage?
     /// Increases with every new frame; the view cross-fades on each change.
     @Published private(set) var frameNumber = 0
     @Published private(set) var screenIsProtected = false
@@ -212,6 +214,7 @@ final class RemoteModel: ObservableObject {
                 guard let frame = await Frame.decode(data), client === self.client else { return }
                 lastFrame = data
                 blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
+                previousScreenshot = screenshot
                 screenshot = frame.image
                 frameNumber += 1
                 countFrame()
@@ -245,6 +248,7 @@ final class RemoteModel: ObservableObject {
         frameTimes = []
         framesPerSecond = nil
         screenshot = nil
+        previousScreenshot = nil
         lastFrame = nil
         blackFrames = 0
         screenIsProtected = false
