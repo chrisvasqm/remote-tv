@@ -22,9 +22,10 @@ extension RemoteModel {
 
     /// Pauses what is playing and turns the picture off, leaving the TV on.
     func turnScreenOff() {
-        setScreenOff(true) {
-            try? await $0.pause()
-            try await $0.setScreen(on: false)
+        setScreenOff(true) { tv in
+            // Don't wait for the pause: a TV that ignores it would hold up the screen for 10 s.
+            Task { try? await tv.pause() }
+            try await tv.setScreen(on: false)
         }
     }
 

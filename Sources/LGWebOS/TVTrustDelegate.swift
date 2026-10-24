@@ -25,6 +25,9 @@ final class TVTrustDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendab
 
     /// The pin of the certificate the TV presented on this session.
     var observedPin: String? { lock.withLock { _observedPin } }
+    /// Forgets a mismatch from an earlier connect, so a later failure reports its own cause.
+    func resetMismatch() { lock.withLock { _pinMismatch = false } }
+
     /// True when the TV presented a certificate other than the pinned one.
     var pinMismatch: Bool { lock.withLock { _pinMismatch } }
 

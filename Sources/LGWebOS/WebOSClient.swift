@@ -23,6 +23,8 @@ public actor WebOSClient: TV {
     private var onDisconnect: (@Sendable () -> Void)?
     /// The live view's previous capture, downloading while the TV captures the next.
     private var pendingFrame: Task<Data, Error>?
+    /// Counts `dropPendingFrame` calls, so a capture that was dropped midway is discarded.
+    private var frameDrops = 0
 
     public init(host: String, keyStore: KeyStore) {
         self.host = host
@@ -48,6 +50,7 @@ public actor WebOSClient: TV {
     /// so this waits up to a minute for the user to accept it.
     public func connect() async throws {
         disconnect()
+        trust.resetMismatch()
         guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
         task.resume()
@@ -64,11 +67,12 @@ public actor WebOSClient: TV {
             guard let key = response["client-key"] as? String else {
                 throw TVError.badResponse("registration without a client key")
             }
-            if key != storedKey { keyStore.setKey(key, for: host) }
+            // Pin first: a key saved without its pin would later go to any certificate.
             if keyStore.pin(for: host) == nil, let pin = trust.observedPin {
                 keyStore.setPin(pin, for: host)
                 trust.pin(pin)
             }
+            if key != storedKey { keyStore.setKey(key, for: host) }
         } catch {
             disconnect()
             throw trust.pinMismatch ? TVError.certificateChanged : error
@@ -107,13 +111,17 @@ public actor WebOSClient: TV {
     /// frame at a time into the same file, so captures can't overlap each other, but a
     /// download can overlap the next capture: about 3 frames a second instead of 2.
     public func nextFrame() async throws -> Data? {
+        let drops = frameDrops
         let url = try await capture()
+        // Dropped while capturing: this frame belongs to a live view that has ended.
+        guard drops == frameDrops else { return nil }
         let previous = pendingFrame
         pendingFrame = Task { try await download(url) }
         return try await previous?.value
     }
 
     public func dropPendingFrame() {
+        frameDrops += 1
         pendingFrame?.cancel()
         pendingFrame = nil
     }
@@ -133,7 +141,9 @@ public actor WebOSClient: TV {
         do {
             return try await session.data(from: url).0
         } catch URLError.timedOut {
-            throw TVError.timeout(url.path)
+            // Not `.timeout`: a slow image says nothing about the control socket, which
+            // `.timeout` would make the app drop.
+            throw TVError.badResponse("the screenshot took too long to download")
         }
     }
 
@@ -240,12 +250,14 @@ public actor WebOSClient: TV {
             resolve(id, with: .failure(error))
             return
         }
-        // Registration first answers "response" (prompt shown), then "registered".
-        if id.hasPrefix("register_") && type != "registered" { return }
         if payload["returnValue"] as? Bool == false {
-            resolve(id, with: .failure(TVError.tv(payload["errorText"] as? String ?? "request failed")))
+            let reason = payload["errorText"] as? String ?? "request failed"
+            let error: TVError = id.hasPrefix("register_") ? .pairingRejected(reason) : .tv(reason)
+            resolve(id, with: .failure(error))
             return
         }
+        // Registration first answers "response" (prompt shown), then "registered".
+        if id.hasPrefix("register_") && type != "registered" { return }
         resolve(id, with: .success(payload))
     }
 

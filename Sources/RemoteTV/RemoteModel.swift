@@ -33,6 +33,8 @@ final class RemoteModel {
     var client: (any TV)?
     /// The address a connect is running for; a connect to another address replaces it.
     private var connectingHost: String?
+    /// Counts connects, so a finished connect clears `connectingHost` only if no newer one began.
+    private var connectAttempt = 0
     /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
     var autoReconnect = true
     var blackFrames = 0
@@ -93,7 +95,9 @@ final class RemoteModel {
         let host = host
         guard !host.isEmpty, connectingHost != host else { return }
         connectingHost = host
-        defer { if connectingHost == host { connectingHost = nil } }
+        connectAttempt += 1
+        let attempt = connectAttempt
+        defer { if connectAttempt == attempt { connectingHost = nil } }
         let client: any TV
         if let current = self.client, clientHost == host {
             client = current
@@ -143,7 +147,9 @@ final class RemoteModel {
         guard failed === client else { return }
         lastError = error.localizedDescription
         if case TVError.timeout = error { await failed.disconnect() }
-        if await !failed.isConnected, status == .connected { status = .unreachable }
+        let stillConnected = await failed.isConnected
+        // Another client may have taken over while this one was disconnecting.
+        if !stillConnected, failed === client, status == .connected { status = .unreachable }
     }
 
     func resetTVState() {
@@ -158,6 +164,7 @@ final class RemoteModel {
         foregroundAppId = nil
         volume = nil
         screenIsOff = false
+        lastMessageSent = nil
     }
 
     private func clientDropped(_ dropped: any TV) {
