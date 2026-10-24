@@ -81,3 +81,25 @@ To add one, say Samsung Tizen:
 ```sh
 swift build
 ```
+
+## Releases
+
+Versions are tagged `vMAJOR.MINOR.PATCH`. From an up-to-date, clean `main`:
+
+```sh
+scripts/release.sh v0.1.0
+```
+
+It builds the app, zips it, tags the commit and publishes a GitHub release. The notes
+list every commit since the previous tag, in English and Spanish. The English line is
+the commit subject; the Spanish one is an `Es:` line in the commit body, and falls back
+to the English subject when there is none:
+
+```sh
+git commit -m "Add screen off" -m "Es: Agrega apagar la pantalla"
+scripts/release-notes.sh        # preview the notes for the next release
+```
+
+The app is signed ad hoc, not notarized, so macOS blocks it the first time after
+download. Open it once, then go to **System Settings > Privacy & Security** and
+click **Open Anyway**.
