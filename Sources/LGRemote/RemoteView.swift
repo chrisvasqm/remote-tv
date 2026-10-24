@@ -33,7 +33,7 @@ struct RemoteView: View {
             footer
         }
         .padding(16)
-        .frame(width: 380)
+        .frame(width: 440)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
         .onAppear {
             draftHost = model.host
@@ -64,33 +64,34 @@ struct RemoteView: View {
     // MARK: - Live screen
 
     private var screen: some View {
-        ZStack(alignment: .bottomLeading) {
-            Rectangle().fill(.black)
-            if let image = model.screenshot {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Color.black
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                if let image = model.screenshot {
+                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                }
+                if model.screenshot == nil || model.screenIsProtected {
+                    Label(
+                        model.screenIsProtected ? "This app or input hides its picture" : "Loading the screen…",
+                        systemImage: model.screenIsProtected ? "eye.slash" : "tv"
+                    )
+                    .font(.callout).foregroundStyle(.white.opacity(0.75))
+                }
             }
-            if model.screenshot == nil || model.screenIsProtected {
-                Label(
-                    model.screenIsProtected ? "This app or input hides its picture" : "Loading the screen…",
-                    systemImage: model.screenIsProtected ? "eye.slash" : "tv"
-                )
-                .font(.callout).foregroundStyle(.white.opacity(0.75))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottomLeading) {
+                HStack(spacing: 6) {
+                    Circle().fill(.red).frame(width: 6, height: 6)
+                    Text(model.foregroundTitle).font(.caption.weight(.semibold))
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(.black.opacity(0.6), in: Capsule())
+                .foregroundStyle(.white)
+                .padding(8)
             }
-            HStack(spacing: 6) {
-                Circle().fill(.red).frame(width: 6, height: 6)
-                Text(model.foregroundTitle).font(.caption.weight(.semibold))
-            }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(.black.opacity(0.6), in: Capsule())
-            .foregroundStyle(.white)
-            .padding(8)
-        }
-        .aspectRatio(16 / 9, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("TV screen, showing \(model.foregroundTitle)")
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("TV screen, showing \(model.foregroundTitle)")
     }
 
     // MARK: - Controls
