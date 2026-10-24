@@ -146,6 +146,8 @@ final class RemoteModel {
     func report(_ error: Error, from failed: any TV) async {
         guard failed === client else { return }
         lastError = error.localizedDescription
+        // Only a live connection is dropped; a connect in progress owns this client.
+        guard status == .connected else { return }
         if case TVError.timeout = error { await failed.disconnect() }
         let stillConnected = await failed.isConnected
         // Another client may have taken over while this one was disconnecting.

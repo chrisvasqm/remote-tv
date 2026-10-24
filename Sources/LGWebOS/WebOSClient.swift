@@ -50,6 +50,8 @@ public actor WebOSClient: TV {
     /// so this waits up to a minute for the user to accept it.
     public func connect() async throws {
         disconnect()
+        // A download left from the last session could otherwise trip the mismatch flag again.
+        dropPendingFrame()
         trust.resetMismatch()
         guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
@@ -67,8 +69,11 @@ public actor WebOSClient: TV {
             guard let key = response["client-key"] as? String else {
                 throw TVError.badResponse("registration without a client key")
             }
-            // Pin first: a key saved without its pin would later go to any certificate.
-            if keyStore.pin(for: host) == nil, let pin = trust.observedPin {
+            // Never keep a key without its pin: it would later go to any certificate.
+            if keyStore.pin(for: host) == nil {
+                guard let pin = trust.observedPin else {
+                    throw TVError.badResponse("no TLS certificate to pin")
+                }
                 keyStore.setPin(pin, for: host)
                 trust.pin(pin)
             }
@@ -117,7 +122,9 @@ public actor WebOSClient: TV {
         guard drops == frameDrops else { return nil }
         let previous = pendingFrame
         pendingFrame = Task { try await download(url) }
-        return try await previous?.value
+        let frame = try await previous?.value
+        // Dropped while the previous frame downloaded: that frame is from the ended view too.
+        return drops == frameDrops ? frame : nil
     }
 
     public func dropPendingFrame() {
@@ -141,9 +148,8 @@ public actor WebOSClient: TV {
         do {
             return try await session.data(from: url).0
         } catch URLError.timedOut {
-            // Not `.timeout`: a slow image says nothing about the control socket, which
-            // `.timeout` would make the app drop.
-            throw TVError.badResponse("the screenshot took too long to download")
+            // Not `.timeout`: a slow image says nothing about the control socket.
+            throw TVError.slowDownload
         }
     }
 
