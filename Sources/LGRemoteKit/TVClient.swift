@@ -43,8 +43,10 @@ public actor TVClient {
     public init(host: String, keyStore: KeyStore) {
         self.host = host
         self.keyStore = keyStore
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
         self.session = URLSession(
-            configuration: .ephemeral,
+            configuration: configuration,
             delegate: TVTrustDelegate(host: host, port: Self.port),
             delegateQueue: nil
         )
@@ -71,10 +73,9 @@ public actor TVClient {
         var payload: JSON = ["forcePairing": false, "pairingType": "PROMPT", "manifest": Manifest.unsigned]
         if let storedKey { payload["client-key"] = storedKey }
         do {
-            let response = try await send(
-                type: "register", uri: nil, payload: payload,
-                timeout: storedKey == nil ? Self.pairingTimeout : Self.requestTimeout
-            )
+            // Even with a stored key the TV may prompt again (pairing removed on the TV),
+            // so always allow time to accept it.
+            let response = try await send(type: "register", uri: nil, payload: payload, timeout: Self.pairingTimeout)
             guard let key = response["client-key"] as? String else {
                 throw TVError.badResponse("registration without a client key")
             }
@@ -136,7 +137,7 @@ public actor TVClient {
         do {
             return try await task.value
         } catch {
-            pointerSocket = nil
+            if pointerSocket == task { pointerSocket = nil }
             throw error
         }
     }

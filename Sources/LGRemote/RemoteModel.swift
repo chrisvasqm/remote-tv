@@ -24,7 +24,8 @@ final class RemoteModel: ObservableObject {
 
     private let keyStore = KeychainKeyStore()
     private var client: TVClient?
-    private var isConnecting = false
+    /// The address a connect is running for; a connect to another address replaces it.
+    private var connectingHost: String?
     /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
     private var autoReconnect = true
     private var blackFrames = 0
@@ -39,7 +40,9 @@ final class RemoteModel: ObservableObject {
     }
 
     func setHost(_ newHost: String) async {
-        host = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        host = trimmed
         UserDefaults.standard.set(host, forKey: "tvHost")
         await reconnect()
     }
@@ -62,14 +65,15 @@ final class RemoteModel: ObservableObject {
     /// A result that arrives after the client was replaced is ignored.
     private func connect() async {
         let host = host
-        guard !host.isEmpty, !isConnecting else { return }
-        isConnecting = true
-        defer { isConnecting = false }
+        guard !host.isEmpty, connectingHost != host else { return }
+        connectingHost = host
+        defer { if connectingHost == host { connectingHost = nil } }
         let client: TVClient
         if let current = self.client, clientHost == host {
             client = current
         } else {
             dropClient()
+            resetTVState()
             client = TVClient(host: host, keyStore: keyStore)
             await client.setDisconnectHandler { [weak self, weak client] in
                 Task { @MainActor in
@@ -87,10 +91,13 @@ final class RemoteModel: ObservableObject {
             lastError = nil
             async let apps = client.homeApps()
             async let inputs = client.inputs()
-            self.apps = (try? await apps) ?? []
-            self.inputs = (try? await inputs) ?? []
+            let (loadedApps, loadedInputs) = ((try? await apps) ?? [], (try? await inputs) ?? [])
+            guard client === self.client else { return }
+            self.apps = loadedApps
+            self.inputs = loadedInputs
             await refreshInfo()
-            if let mac = await WakeOnLAN.macAddress(for: host) {
+            if UserDefaults.standard.string(forKey: Self.macKey(host)) == nil,
+               let mac = await WakeOnLAN.macAddress(for: host) {
                 UserDefaults.standard.set(mac, forKey: Self.macKey(host))
             }
         } catch {
@@ -113,10 +120,10 @@ final class RemoteModel: ObservableObject {
 
     private func startPolling() {
         guard pollTask == nil else { return }
-        pollTask?.cancel()
-        pollTask = Task { [weak self] in
+        // Holds the model strongly; stopPolling() cancels the loop when the panel closes.
+        pollTask = Task {
             var tick = 0
-            while !Task.isCancelled, let self {
+            while !Task.isCancelled {
                 switch status {
                 case .connected:
                     let due = tick % 3 == 0 || refreshSoon
@@ -144,9 +151,11 @@ final class RemoteModel: ObservableObject {
         do {
             async let app = client.foregroundAppId()
             async let volume = client.volume()
-            (foregroundAppId, self.volume) = try await (app, volume)
+            let (appId, level) = try await (app, volume)
+            guard client === self.client else { return }
+            (foregroundAppId, self.volume) = (appId, level)
         } catch {
-            report(error, from: client)
+            await report(error, from: client)
         }
     }
 
@@ -154,19 +163,41 @@ final class RemoteModel: ObservableObject {
         guard let client else { return }
         do {
             let data = try await client.screenshot()
-            guard data != lastFrame, let frame = await Frame.decode(data) else { return }
-            lastFrame = data
-            blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
+            guard client === self.client else { return }
+            if data == lastFrame {
+                // An unchanged black frame still counts toward "protected".
+                if blackFrames > 0 { blackFrames += 1 }
+            } else {
+                guard let frame = await Frame.decode(data), client === self.client else { return }
+                lastFrame = data
+                blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
+                screenshot = frame.image
+            }
             screenIsProtected = blackFrames >= 5
-            screenshot = frame.image
         } catch {
-            report(error, from: client)
+            await report(error, from: client)
         }
     }
 
-    private func report(_ error: Error, from failed: TVClient) {
+    /// A timeout means the TV went away without closing the socket (power or Wi-Fi
+    /// lost): drop the connection so the poll loop starts reconnecting.
+    private func report(_ error: Error, from failed: TVClient) async {
         guard failed === client else { return }
         lastError = error.localizedDescription
+        if case TVError.timeout = error { await failed.disconnect() }
+        if case URLError.timedOut = error { await failed.disconnect() }
+        if await !failed.isConnected, status == .connected { status = .unreachable }
+    }
+
+    private func resetTVState() {
+        screenshot = nil
+        lastFrame = nil
+        blackFrames = 0
+        screenIsProtected = false
+        apps = []
+        inputs = []
+        foregroundAppId = nil
+        volume = nil
     }
 
     private func clientDropped(_ dropped: TVClient) {
@@ -206,10 +237,7 @@ final class RemoteModel: ObservableObject {
         self.client = nil
         autoReconnect = false
         status = .unreachable
-        screenshot = nil
-        lastFrame = nil
-        blackFrames = 0
-        screenIsProtected = false
+        resetTVState()
         Task {
             // The TV often drops the socket before answering; that still means it is off.
             try? await client.turnOff()
@@ -237,6 +265,7 @@ final class RemoteModel: ObservableObject {
         clientHost = ""
         autoReconnect = false
         status = .idle
+        resetTVState()
     }
 
     private func run(_ action: @escaping (TVClient) async throws -> Void) {
@@ -246,7 +275,7 @@ final class RemoteModel: ObservableObject {
                 try await action(client)
                 refreshSoon = true
             } catch {
-                report(error, from: client)
+                await report(error, from: client)
             }
         }
     }
