@@ -1,17 +1,29 @@
 # RemoteTV
 
-A menu-bar remote for LG webOS TVs on the same network. It shows what the TV
-is showing and has the common remote controls:
+A macOS menu-bar remote for smart TVs on the same network. It shows what the TV
+is showing and has the common remote controls. The app talks to a brand-neutral
+`TV` protocol, and each TV brand plugs in behind it.
 
-- live screenshot (every 3 s while the panel is open) and the current app
-- arrow keys, OK, Back, Home, TV settings
+## Supported TVs
+
+| Brand | Target | Tested on |
+|---|---|---|
+| LG webOS | `LGWebOS` | LG 70UR8050AUA, webOS 25 (10.3.2) |
+
+To support another brand, see [Adding a brand](#adding-a-brand).
+
+## Features
+
+Each brand lists the features its TVs support, and the panel hides the rest.
+
+- live view of the TV screen while the panel is open, and the current app
+- arrow keys, OK, Back, Home, TV settings, channel up and down
 - play, pause, stop, volume, mute
-- one-click app switching (the apps on the TV's Home row), close the current app
+- one-click app switching, close the current app
 - input switching (HDMI)
 - a message shown on the TV screen
+- screen off and on (the TV stays on)
 - turn off, and turn on with Wake-on-LAN
-
-Tested on an LG 70UR8050AUA with webOS 25 (10.3.2).
 
 ## Install
 
@@ -22,39 +34,42 @@ scripts/bundle.sh --install
 open "/Applications/RemoteTV.app"
 ```
 
-Click the TV icon in the menu bar, enter the TV's IP address
-(TV: Settings > Support > TV information, or your router), and accept the
-"allow connection" prompt on the TV with its remote. macOS also asks once to
-allow access to the local network; allow it.
+Click the TV icon in the menu bar and enter the TV's IP address (the TV's
+network settings or your router show it). The first time, the TV asks you to
+allow the connection; accept it with the TV's own remote. macOS also asks once
+to allow access to the local network; allow it.
 
-## TV settings it needs
-
-- **Settings > General > External Devices > TV On With Mobile > Turn on via Wi-Fi**: on,
-  for the "Turn TV on" button. The app learns the TV's MAC address the first
-  time it connects while the TV is on.
-
-## Limits
-
-- Netflix, other protected apps, HDMI and Live TV capture as a black frame.
-  The panel says so instead of showing black.
-- The TV's API cannot hold a button down, read most settings, or delete apps.
-- Recent webOS firmware rejects the signed pairing manifest that other remote
-  apps share (`403 blacklisted certificate`). This app pairs with an unsigned
-  manifest, which the TV accepts after you confirm the prompt.
+To turn the TV on from the app, the TV must allow Wake-on-LAN (see your brand
+below). The app learns the TV's MAC address the first time it connects while
+the TV is on.
 
 ## Security
 
 - The pairing key is stored in `~/Library/Application Support/RemoteTV/<tv>.key`
   (folder 700, file 600). There is no Keychain prompt; any app running as you
   could read the key.
-- The app asks the TV only for the permissions it uses (see `Manifest.swift`).
-- The TV's self-signed certificate is trusted only for the configured TV
-  address on port 3001, and is pinned at the first pairing (SHA-256 of its
-  public key, saved next to the key). A different certificate later is refused
-  before the pairing key is sent. If you reset or replace the TV, unpair and pair again.
+- When a brand uses TLS with a self-signed certificate, the certificate is trusted
+  only for the configured TV address and is pinned at the first pairing (SHA-256
+  of its public key, saved next to the key). A different certificate later is
+  refused before the pairing key is sent. If you reset or replace the TV, unpair
+  and pair again.
 - Requests never follow redirects.
-- To unpair: **Settings > Forget pairing** in the panel. Anyone on your network
+- To unpair: **Settings > Unpair this Mac** in the panel. Anyone on your network
   who pairs with the TV (the TV asks first) gets the same control.
+
+## LG webOS
+
+- **Address:** TV Settings > Support > TV information.
+- **Turn on:** set **Settings > General > External Devices > TV On With Mobile >
+  Turn on via Wi-Fi** to on.
+- **Connection:** the SSAP WebSocket API on port 3001 (TLS). The app asks only for
+  the permissions it uses (see `Sources/LGWebOS/Manifest.swift`).
+- **Pairing:** recent firmware rejects the signed pairing manifest that other remote
+  apps share (`403 blacklisted certificate`). This app pairs with an unsigned
+  manifest, which the TV accepts after you confirm the prompt.
+- **Limits:** Netflix, other protected apps, HDMI and Live TV capture as a black
+  frame; the panel says so instead of showing black. The API cannot hold a button
+  down, read most settings, or delete apps.
 
 ## Adding a brand
 
@@ -75,6 +90,8 @@ To add one, say Samsung Tizen:
    for `addressHelp` and `wakeHelp`.
 4. In `Sources/RemoteTV/Brand.swift`, return your brand instead of `LGWebOSBrand()`,
    and add the target to the app's dependencies in `Package.swift`.
+5. Add a row to [Supported TVs](#supported-tvs) and a section with the brand's TV
+   settings and limits.
 
 ## Development
 
