@@ -19,20 +19,15 @@ struct RemoteView: View {
     private static let presets = ["Bedtime in 10 min", "Dinner is ready", "Screen time is over"]
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             header
             if showSettings {
                 settings
             } else if model.status == .connected {
                 screen
-                Toggle("Smooth preview", isOn: $model.smoothPreview)
-                    .toggleStyle(.switch).controlSize(.mini).font(.caption)
-                    .foregroundStyle(Remote.label.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .help("Captures frames as fast as the TV allows. Uses about 250 KB per second.")
                 controls
                 appKeys
-                messages
+                if showMessages { messages }
             } else {
                 offline
             }
@@ -120,6 +115,14 @@ struct RemoteView: View {
                 HStack(spacing: 6) {
                     Circle().fill(.red).frame(width: 6, height: 6)
                     Text(model.foregroundTitle).font(.caption.weight(.semibold))
+                    if model.foregroundAppId != TVApp.homeId {
+                        Button { model.closeForegroundApp() } label: {
+                            Image(systemName: "xmark").font(.caption2.weight(.bold))
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Close \(model.foregroundTitle)")
+                        .accessibilityLabel("Close \(model.foregroundTitle)")
+                    }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(.black.opacity(0.6), in: Capsule())
@@ -147,28 +150,24 @@ struct RemoteView: View {
     // MARK: - Controls
 
     private var controls: some View {
-        VStack(spacing: 16) {
-            dpad
-            HStack(spacing: 28) {
-                key("arrow.uturn.backward", "Back (Delete)") { model.press("BACK") }
-                key("house.fill", "Home") { model.press("HOME") }
-                key("gearshape.fill", "TV settings") { model.press("MENU") }
-            }
-            HStack(alignment: .center) {
-                rocker("Vol", up: ("plus", "Volume up", model.volumeUp), down: ("minus", "Volume down", model.volumeDown))
+        VStack(spacing: 12) {
+            HStack {
+                rocker(volumeText.isEmpty ? "Vol" : volumeText, up: ("plus", "Volume up", model.volumeUp), down: ("minus", "Volume down", model.volumeDown))
                 Spacer()
-                VStack(spacing: 6) {
-                    key(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill", "Mute") {
-                        model.toggleMute()
-                    }
-                    Text(volumeText).font(.caption.monospacedDigit()).foregroundStyle(Remote.label.opacity(0.6))
-                }
+                dpad
                 Spacer()
                 rocker("Ch", up: ("chevron.up", "Channel up", { model.press("CHANNELUP") }),
                        down: ("chevron.down", "Channel down", { model.press("CHANNELDOWN") }))
             }
-            .padding(.horizontal, 24)
-            HStack(spacing: 14) {
+            .padding(.horizontal, 6)
+            HStack(spacing: 8) {
+                key("arrow.uturn.backward", "Back (Delete)") { model.press("BACK") }
+                key("house.fill", "Home") { model.press("HOME") }
+                key("gearshape.fill", "TV settings") { model.press("MENU") }
+                key(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill", "Mute") {
+                    model.toggleMute()
+                }
+                Spacer(minLength: 0)
                 key("play.fill", "Play") { model.play() }
                 key("pause.fill", "Pause (Space)") { model.pause() }
                 key("stop.fill", "Stop") { model.stop() }
@@ -195,20 +194,20 @@ struct RemoteView: View {
 
     /// The wheel: four arrows around a round OK key, like the remote's navigation ring.
     private var dpad: some View {
-        let ring: CGFloat = 156
+        let ring: CGFloat = 140
         let arrow = CGSize(width: 44, height: 44)
         return ZStack {
             Circle().fill(Remote.key)
                 .overlay(Circle().strokeBorder(Remote.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
-            arrowKey("chevron.up", "Up (↑)", "UP", arrow).offset(y: -(ring / 2 - 24))
-            arrowKey("chevron.down", "Down (↓)", "DOWN", arrow).offset(y: ring / 2 - 24)
-            arrowKey("chevron.left", "Left (←)", "LEFT", arrow).offset(x: -(ring / 2 - 24))
-            arrowKey("chevron.right", "Right (→)", "RIGHT", arrow).offset(x: ring / 2 - 24)
+            arrowKey("chevron.up", "Up (↑)", "UP", arrow).offset(y: -(ring / 2 - 22))
+            arrowKey("chevron.down", "Down (↓)", "DOWN", arrow).offset(y: ring / 2 - 22)
+            arrowKey("chevron.left", "Left (←)", "LEFT", arrow).offset(x: -(ring / 2 - 22))
+            arrowKey("chevron.right", "Right (→)", "RIGHT", arrow).offset(x: ring / 2 - 22)
             Button { model.press("ENTER") } label: {
                 Text("OK").font(.system(size: 15, weight: .semibold))
             }
-            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 64, height: 64), fill: Remote.okKey))
+            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 58, height: 58), fill: Remote.okKey))
             .help("OK (Return)")
         }
         .frame(width: ring, height: ring)
@@ -231,7 +230,7 @@ struct RemoteView: View {
     ) -> some View {
         VStack(spacing: 0) {
             rockerHalf(up)
-            Text(name).font(.caption.weight(.semibold)).foregroundStyle(Remote.label.opacity(0.6))
+            Text(name).font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(Remote.label.opacity(0.6))
                 .accessibilityHidden(true)
             rockerHalf(down)
         }
@@ -265,23 +264,29 @@ struct RemoteView: View {
 
     // MARK: - Apps
 
-    /// The app shortcut keys at the bottom of the remote.
+    /// The app shortcut keys at the bottom of the remote, four to a row.
+    /// A short last row is centred, the way keys sit on a remote.
     private var appKeys: some View {
-        VStack(spacing: 8) {
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(launchableApps) { app in
-                    Button { model.launch(app) } label: {
-                        Text(app.title).font(.caption.weight(.semibold)).lineLimit(1).padding(.horizontal, 6)
+        let columns = 4
+        let spacing: CGFloat = 6
+        let width = (Self.previewWidth - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        let apps = launchableApps
+        let rows = stride(from: 0, to: apps.count, by: columns).map { Array(apps[$0..<min($0 + columns, apps.count)]) }
+        return VStack(spacing: spacing) {
+            ForEach(rows, id: \.first?.id) { row in
+                HStack(spacing: spacing) {
+                    ForEach(row) { app in
+                        Button { model.launch(app) } label: {
+                            Text(app.title).font(.caption.weight(.semibold))
+                                .lineLimit(1).minimumScaleFactor(0.8).padding(.horizontal, 4)
+                        }
+                        .buttonStyle(KeyStyle(
+                            shape: .capsule, size: CGSize(width: width, height: 26),
+                            fill: app.id == model.foregroundAppId ? Remote.active : Remote.key
+                        ))
+                        .frame(width: width)
                     }
-                    .buttonStyle(KeyStyle(
-                        shape: .capsule, size: CGSize(width: 96, height: 28),
-                        fill: app.id == model.foregroundAppId ? Remote.active : Remote.key
-                    ))
                 }
-            }
-            if model.foregroundAppId != TVApp.homeId {
-                Button("Close \(model.foregroundTitle)") { model.closeForegroundApp() }
-                    .buttonStyle(.borderless).font(.caption).foregroundStyle(Remote.label.opacity(0.7))
             }
         }
     }
@@ -294,7 +299,6 @@ struct RemoteView: View {
     // MARK: - Messages
 
     private var messages: some View {
-        DisclosureGroup("Show a message on the TV", isExpanded: $showMessages) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     ForEach(Self.presets, id: \.self) { preset in
@@ -313,10 +317,8 @@ struct RemoteView: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            .padding(.top, 6)
-        }
-        .font(.callout)
-        .foregroundStyle(Remote.label)
+            .font(.callout)
+            .foregroundStyle(Remote.label)
     }
 
     // MARK: - Offline and settings
@@ -365,6 +367,14 @@ struct RemoteView: View {
     private var footer: some View {
         HStack {
             Button(showSettings ? "Done" : "Settings") { showSettings.toggle() }
+            if model.status == .connected && !showSettings {
+                Button(showMessages ? "Hide message" : "Message") { showMessages.toggle() }
+                    .help("Show a message on the TV")
+                Spacer()
+                Toggle("Smooth", isOn: $model.smoothPreview)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .help("Smooth preview: captures frames as fast as the TV allows. Uses about 250 KB per second.")
+            }
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }
         }
@@ -379,7 +389,7 @@ struct RemoteView: View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 14, weight: .semibold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 40, height: 40), fill: Remote.key))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 36, height: 36), fill: Remote.key))
         .help(help)
         .accessibilityLabel(help)
     }
