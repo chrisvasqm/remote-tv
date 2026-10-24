@@ -1,6 +1,7 @@
 #!/bin/sh
 # Builds "RemoteTV.app" into build/ and signs it ad hoc.
 # Usage: scripts/bundle.sh [--install]   (--install moves it to /Applications)
+# VERSION=1.2.3 sets the app version (default 0.0.0).
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -20,8 +21,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>RemoteTV</string>
     <key>CFBundleExecutable</key><string>RemoteTV</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>${VERSION:-0.0.0}</string>
+    <key>CFBundleVersion</key><string>${VERSION:-0.0.0}</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSLocalNetworkUsageDescription</key>
