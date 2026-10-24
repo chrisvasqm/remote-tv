@@ -18,7 +18,7 @@ final class TVTrustDelegate: NSObject, URLSessionDelegate {
     ) {
         let space = challenge.protectionSpace
         guard space.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              space.host == host,
+              space.host.caseInsensitiveCompare(host) == .orderedSame,
               space.port == port,
               let trust = space.serverTrust else {
             completionHandler(.performDefaultHandling, nil)

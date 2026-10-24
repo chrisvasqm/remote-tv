@@ -2,6 +2,7 @@ import Foundation
 
 public enum TVError: LocalizedError {
     case notConnected
+    case invalidAddress(String)
     case pairingRejected(String)
     case timeout(String)
     case tv(String)
@@ -10,6 +11,7 @@ public enum TVError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .notConnected: return "Not connected to the TV."
+        case .invalidAddress(let host): return "\"\(host)\" is not a valid TV address."
         case .pairingRejected(let reason): return "The TV refused pairing: \(reason)"
         case .timeout(let what): return "The TV did not answer: \(what)"
         case .tv(let message): return "The TV answered with an error: \(message)"
@@ -59,7 +61,7 @@ public actor TVClient {
     /// so this waits up to a minute for the user to accept it.
     public func connect() async throws {
         disconnect()
-        guard let url = onTVHost("wss://\(host)") else { throw TVError.notConnected }
+        guard let url = onTVHost("wss://localhost") else { throw TVError.invalidAddress(host) }
         let task = session.webSocketTask(with: url)
         task.resume()
         socket = task

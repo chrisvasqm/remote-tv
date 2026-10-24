@@ -6,6 +6,7 @@ struct RemoteView: View {
     @State private var message = ""
     @State private var confirmPowerOff = false
     @State private var showSettings = false
+    @State private var draftHost = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -27,11 +28,11 @@ struct RemoteView: View {
         }
         .padding(14)
         .frame(width: 360)
+        .background(PanelVisibility { model.panelVisibilityChanged($0) })
         .onAppear {
-            if model.tvHost.isEmpty { showSettings = true }
-            model.startPolling()
+            draftHost = model.host
+            if model.host.isEmpty { showSettings = true }
         }
-        .onDisappear { model.stopPolling() }
     }
 
     // MARK: - Sections
@@ -50,11 +51,12 @@ struct RemoteView: View {
     private var screen: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 8).fill(.black)
-            if let image = model.screenshot, !model.screenIsProtected {
+            if let image = model.screenshot {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
-            } else {
+            }
+            if model.screenshot == nil || model.screenIsProtected {
                 Label(
-                    model.screenIsProtected ? "This app or input blocks screen capture" : "Loading screen…",
+                    model.screenIsProtected ? "Black screen: this app or input may block capture" : "Loading screen…",
                     systemImage: model.screenIsProtected ? "lock.tv" : "tv"
                 )
                 .font(.caption).foregroundStyle(.white.opacity(0.7))
@@ -161,7 +163,9 @@ struct RemoteView: View {
                 } else {
                     Button("Turn TV on") { model.turnOn() }
                 }
-                Button("Reconnect") { Task { await model.connect() } }
+                if model.status != .pairing && model.status != .connecting {
+                    Button("Reconnect") { Task { await model.reconnect() } }
+                }
             }
         }
     }
@@ -169,13 +173,14 @@ struct RemoteView: View {
     private var settings: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("TV address").font(.caption).foregroundStyle(.secondary)
-            TextField("192.168.0.10", text: $model.host)
+            TextField("192.168.0.10", text: $draftHost)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveSettings)
             Text("On the TV: Settings > Support > TV information shows the address. Accept the prompt on the TV the first time.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button("Connect", action: saveSettings).disabled(model.tvHost.isEmpty)
+                Button("Connect", action: saveSettings)
+                    .disabled(draftHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("Forget pairing") { model.forgetPairing() }
             }
         }
@@ -216,7 +221,7 @@ struct RemoteView: View {
 
     private func saveSettings() {
         showSettings = false
-        Task { await model.connect() }
+        Task { await model.setHost(draftHost) }
     }
 
     private var volumeText: String {
@@ -242,7 +247,7 @@ struct RemoteView: View {
         case .networkBlocked:
             return "macOS is blocking LG Remote from the local network. Turn on LG Remote under Privacy & Security > Local Network, then reconnect."
         default:
-            return "Can't reach the TV at \(model.tvHost). It may be off or on another network."
+            return "Can't reach the TV at \(model.host). It may be off or on another network."
         }
     }
 

@@ -11,9 +11,8 @@ final class RemoteModel: ObservableObject {
         case idle, connecting, pairing, connected, unreachable, networkBlocked
     }
 
-    @Published var host: String {
-        didSet { UserDefaults.standard.set(host, forKey: "tvHost") }
-    }
+    /// The confirmed TV address (trimmed). Changed only through `setHost`.
+    @Published private(set) var host: String
     @Published private(set) var status: Status = .idle
     @Published private(set) var screenshot: NSImage?
     @Published private(set) var screenIsProtected = false
@@ -24,8 +23,11 @@ final class RemoteModel: ObservableObject {
     @Published var lastError: String?
 
     private let keyStore = KeychainKeyStore()
-    private let localNetwork = LocalNetworkAccess()
     private var client: TVClient?
+    private var isConnecting = false
+    /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
+    private var autoReconnect = true
+    private var blackFrames = 0
     private var clientHost = ""
     private var pollTask: Task<Void, Never>?
     private var lastFrame: Data?
@@ -33,11 +35,20 @@ final class RemoteModel: ObservableObject {
 
     init() {
         host = UserDefaults.standard.string(forKey: "tvHost") ?? ""
-        localNetwork.check()
+        Task { _ = await LocalNetworkAccess.isDenied() }
     }
 
-    /// The address as typed, without stray spaces; used for every lookup.
-    var tvHost: String { host.trimmingCharacters(in: .whitespaces) }
+    func setHost(_ newHost: String) async {
+        host = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(host, forKey: "tvHost")
+        await reconnect()
+    }
+
+    /// Connects on request, re-enabling automatic reconnects.
+    func reconnect() async {
+        autoReconnect = true
+        await connect()
+    }
 
     var foregroundTitle: String {
         guard let id = foregroundAppId else { return "–" }
@@ -49,9 +60,11 @@ final class RemoteModel: ObservableObject {
 
     /// Connects, reusing the current client when the address has not changed.
     /// A result that arrives after the client was replaced is ignored.
-    func connect() async {
-        let host = tvHost
-        guard !host.isEmpty else { return }
+    private func connect() async {
+        let host = host
+        guard !host.isEmpty, !isConnecting else { return }
+        isConnecting = true
+        defer { isConnecting = false }
         let client: TVClient
         if let current = self.client, clientHost == host {
             client = current
@@ -78,22 +91,28 @@ final class RemoteModel: ObservableObject {
             self.inputs = (try? await inputs) ?? []
             await refreshInfo()
             if let mac = await WakeOnLAN.macAddress(for: host) {
-                UserDefaults.standard.set(mac, forKey: macKey)
+                UserDefaults.standard.set(mac, forKey: Self.macKey(host))
             }
         } catch {
             guard client === self.client else { return }
             log.error("connect to \(host, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-            status = localNetwork.isDenied ? .networkBlocked : .unreachable
-            lastError = localNetwork.isDenied ? nil : error.localizedDescription
+            let denied = await LocalNetworkAccess.isDenied()
+            status = denied ? .networkBlocked : .unreachable
+            lastError = denied ? nil : error.localizedDescription
         }
     }
 
-    /// Live view while the panel is open: about one frame a second, read one
+    /// Live view while the panel is visible: about one frame a second, read one
     /// after another so requests never pile up on the TV. Protected screens
-    /// (always black) and app/volume info are only checked every third tick,
-    /// or on the next tick after an action. When the TV is unreachable it
-    /// retries the connection every 10 seconds.
-    func startPolling() {
+    /// (black for 5 frames in a row) and app/volume info are only checked every
+    /// third tick, or on the next tick after an action. When the TV is
+    /// unreachable it retries the connection every 10 seconds.
+    func panelVisibilityChanged(_ visible: Bool) {
+        visible ? startPolling() : stopPolling()
+    }
+
+    private func startPolling() {
+        guard pollTask == nil else { return }
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             var tick = 0
@@ -105,10 +124,7 @@ final class RemoteModel: ObservableObject {
                     if due { await refreshInfo() }
                     if due || !screenIsProtected { await refreshScreen() }
                 case .idle, .unreachable, .networkBlocked:
-                    if tick % 10 == 0 {
-                        localNetwork.check()
-                        await connect()
-                    }
+                    if tick % 10 == 0 && autoReconnect { await connect() }
                 case .connecting, .pairing:
                     break
                 }
@@ -118,7 +134,7 @@ final class RemoteModel: ObservableObject {
         }
     }
 
-    func stopPolling() {
+    private func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
     }
@@ -140,7 +156,8 @@ final class RemoteModel: ObservableObject {
             let data = try await client.screenshot()
             guard data != lastFrame, let frame = await Frame.decode(data) else { return }
             lastFrame = data
-            screenIsProtected = frame.isNearlyBlack
+            blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
+            screenIsProtected = blackFrames >= 5
             screenshot = frame.image
         } catch {
             report(error, from: client)
@@ -164,7 +181,7 @@ final class RemoteModel: ObservableObject {
         Task { await old.shutdown() }
     }
 
-    private var macKey: String { "tvMac.\(tvHost)" }
+    private static func macKey(_ host: String) -> String { "tvMac.\(host)" }
 
     // MARK: - Actions
 
@@ -187,7 +204,12 @@ final class RemoteModel: ObservableObject {
     func turnOff() {
         guard let client else { return }
         self.client = nil
+        autoReconnect = false
         status = .unreachable
+        screenshot = nil
+        lastFrame = nil
+        blackFrames = 0
+        screenIsProtected = false
         Task {
             // The TV often drops the socket before answering; that still means it is off.
             try? await client.turnOff()
@@ -197,7 +219,8 @@ final class RemoteModel: ObservableObject {
 
     /// Sends the Wake-on-LAN packet; the poll loop reconnects once the TV is up.
     func turnOn() {
-        guard let mac = UserDefaults.standard.string(forKey: macKey) else {
+        autoReconnect = true
+        guard let mac = UserDefaults.standard.string(forKey: Self.macKey(host)) else {
             lastError = "Turn the TV on once with the remote so the app can learn its address."
             return
         }
@@ -209,8 +232,10 @@ final class RemoteModel: ObservableObject {
     }
 
     func forgetPairing() {
-        keyStore.removeKey(for: tvHost)
+        keyStore.removeKey(for: clientHost.isEmpty ? host : clientHost)
         dropClient()
+        clientHost = ""
+        autoReconnect = false
         status = .idle
     }
 
