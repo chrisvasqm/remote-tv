@@ -28,7 +28,7 @@ extension RemoteModel {
     /// Shows the new screen state at once; the driver sends it to the TV in order.
     private func setScreenOff(_ off: Bool) {
         guard client != nil else { return }
-        if screenChanges.isEmpty { screenBeforeChanges = screenIsOff }
+        if screenBeforeChanges == nil { screenBeforeChanges = screenIsOff }
         screenChanges.append(off)
         screenIsOff = off
         nudge.fire()

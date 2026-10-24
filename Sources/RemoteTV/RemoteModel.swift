@@ -45,7 +45,8 @@ final class RemoteModel {
     /// Screen off/on changes waiting for the driver, oldest first (`true` = off).
     var screenChanges: [Bool] = []
     /// The screen state before the waiting changes, put back if the TV refuses them all.
-    var screenBeforeChanges = false
+    /// Set by the first change and cleared when the driver has sent them all.
+    var screenBeforeChanges: Bool?
     /// Wakes the driver early when an intent needs it.
     let nudge = Nudge()
     var blackFrames = 0
@@ -144,6 +145,7 @@ final class RemoteModel {
         volume = nil
         screenIsOff = false
         screenChanges = []
+        screenBeforeChanges = nil
         lastMessageSent = nil
     }
 
