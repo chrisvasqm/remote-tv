@@ -24,7 +24,7 @@ final class RemoteModel: ObservableObject {
     /// The last message the TV accepted, for a short confirmation in the panel.
     @Published var lastMessageSent: String?
 
-    private let keyStore = KeychainKeyStore()
+    private let keyStore = CachedKeyStore(KeychainKeyStore())
     private var client: TVClient?
     /// The address a connect is running for; a connect to another address replaces it.
     private var connectingHost: String?

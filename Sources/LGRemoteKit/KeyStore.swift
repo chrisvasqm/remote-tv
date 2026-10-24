@@ -67,3 +67,38 @@ public struct FileKeyStore: KeyStore {
         try? FileManager.default.removeItem(at: url)
     }
 }
+
+/// Keeps keys in memory after the first read, so the Keychain (and its access
+/// prompt) is hit at most once per TV per launch instead of on every reconnect.
+public final class CachedKeyStore: KeyStore, @unchecked Sendable {
+    private let base: KeyStore
+    private var cache: [String: String?] = [:]
+    private let lock = NSLock()
+
+    public init(_ base: KeyStore) {
+        self.base = base
+    }
+
+    public func key(for host: String) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = cache[host] { return cached }
+        let key = base.key(for: host)
+        cache[host] = key
+        return key
+    }
+
+    public func setKey(_ key: String, for host: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        base.setKey(key, for: host)
+        cache[host] = key
+    }
+
+    public func removeKey(for host: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        base.removeKey(for: host)
+        cache[host] = .some(nil)
+    }
+}
