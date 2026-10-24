@@ -9,16 +9,19 @@ import Security
 final class TVTrustDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let host: String
     private let port: Int
-    private let expectedPin: String?
     private let lock = NSLock()
+    private var _expectedPin: String?
     private var _observedPin: String?
     private var _pinMismatch = false
 
     init(host: String, port: Int, expectedPin: String?) {
         self.host = host
         self.port = port
-        self.expectedPin = expectedPin
+        self._expectedPin = expectedPin
     }
+
+    /// Pins the certificate saved at pairing, so later connections on this session check it.
+    func pin(_ pin: String) { lock.withLock { _expectedPin = pin } }
 
     /// The pin of the certificate the TV presented on this session.
     var observedPin: String? { lock.withLock { _observedPin } }
@@ -42,7 +45,7 @@ final class TVTrustDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendab
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
-        if let expectedPin, expectedPin != pin {
+        if let expectedPin = lock.withLock({ _expectedPin }), expectedPin != pin {
             lock.withLock { _pinMismatch = true }
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
