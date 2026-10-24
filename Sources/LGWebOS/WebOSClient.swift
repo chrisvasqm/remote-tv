@@ -65,7 +65,10 @@ public actor WebOSClient: TV {
                 throw TVError.badResponse("registration without a client key")
             }
             if key != storedKey { keyStore.setKey(key, for: host) }
-            if keyStore.pin(for: host) == nil, let pin = trust.observedPin { keyStore.setPin(pin, for: host) }
+            if keyStore.pin(for: host) == nil, let pin = trust.observedPin {
+                keyStore.setPin(pin, for: host)
+                trust.pin(pin)
+            }
         } catch {
             disconnect()
             throw trust.pinMismatch ? TVError.certificateChanged : error
@@ -93,11 +96,6 @@ public actor WebOSClient: TV {
     /// Long presses are not supported by the TV's pointer socket.
     public func press(button: String) async throws {
         try await pointer().send(.string("type:button\nname:\(button)\n\n"))
-    }
-
-    /// Opens the button socket without pressing anything (used by the check tool).
-    public func openButtonSocket() async throws {
-        _ = try await pointer()
     }
 
     /// Captures the screen. Protected content (Netflix, HDMI, Live TV) comes back black.
