@@ -48,7 +48,8 @@ public enum WakeOnLAN {
         guard groups.count == 6 else { return nil }
         var bytes: [UInt8] = []
         for group in groups {
-            guard (1...2).contains(group.count), group.allSatisfy(\.isHexDigit),
+            // ASCII only: isHexDigit alone also accepts fullwidth digits.
+            guard (1...2).contains(group.count), group.allSatisfy({ $0.isASCII && $0.isHexDigit }),
                   let byte = UInt8(group, radix: 16) else { return nil }
             bytes.append(byte)
         }
@@ -86,10 +87,8 @@ public enum WakeOnLAN {
         guard (try? process.run()) != nil else { return nil }
         process.waitUntilExit()
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        guard let range = output.range(of: #"([0-9a-fA-F]{1,2}:){5}[0-9a-fA-F]{1,2}"#, options: .regularExpression) else {
-            return nil
-        }
-        // arp drops leading zeros ("2:f:b5:..."); pad each part back to two digits.
-        return output[range].split(separator: ":").map { $0.count == 1 ? "0\($0)" : String($0) }.joined(separator: ":")
+        // arp drops leading zeros ("2:f:b5:..."); parseMAC accepts that, and the result is padded.
+        let bytes = output.split(whereSeparator: \.isWhitespace).lazy.compactMap { parseMAC(String($0)) }.first
+        return bytes?.map { String(format: "%02x", $0) }.joined(separator: ":")
     }
 }

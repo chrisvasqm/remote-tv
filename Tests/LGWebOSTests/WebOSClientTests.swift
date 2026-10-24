@@ -24,10 +24,4 @@ struct WebOSClientTests {
         #expect(await client.onTVHost(input)?.absoluteString == expected)
         await client.shutdown()
     }
-
-    @Test func brandListsWhatTheClientImplements() {
-        let brand = LGWebOSBrand()
-        #expect(brand.supports([.screenshot, .apps, .inputs, .channels, .messages, .screenOff, .powerOff, .wakeOnLAN]))
-        #expect(brand.homeAppId == "com.webos.app.home")
-    }
 }

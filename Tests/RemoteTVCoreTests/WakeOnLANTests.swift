@@ -26,6 +26,7 @@ struct WakeOnLANTests {
         "aa:bb:cc:dd:ee:ff:",       // trailing separator
         "aa:bb:cc-dd-ee-ff",        // mixed separators
         "aa:bb:cc:dd:ee:+f",        // sign
+        "aa:bb:cc:dd:ee:ｆｆ",        // fullwidth digits
         "aabbccddeeff",             // no separators
         "aa bb cc dd ee ff",        // spaces
     ])
