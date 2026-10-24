@@ -152,20 +152,20 @@ extension RemoteModel {
     /// Applies the user's screen off/on changes in order. If any was refused or skipped,
     /// the panel ends on the last state the TV accepted, not on a refused one.
     private func applyScreenChanges() async {
-        guard let first = screenChanges.first else { return }
+        guard !screenChanges.isEmpty else { return }
         let owner = client
-        var accepted = first.previous
+        var accepted = screenBeforeChanges
         var anyFailed = false
         while !screenChanges.isEmpty {
-            let change = screenChanges.removeFirst()
+            let off = screenChanges.removeFirst()
             guard let client else {
                 anyFailed = true
                 continue
             }
             do {
-                if change.off { try? await client.pause() }
-                try await client.setScreen(on: !change.off)
-                accepted = change.off
+                if off { try? await client.pause() }
+                try await client.setScreen(on: !off)
+                accepted = off
                 guard client === self.client else { continue }
                 refreshSoon = true
                 lastError = nil
