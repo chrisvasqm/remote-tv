@@ -10,6 +10,5 @@ let package = Package(
         // One target per brand, each implementing RemoteTVCore's TV protocol.
         .target(name: "LGWebOS", dependencies: ["RemoteTVCore"]),
         .executableTarget(name: "RemoteTV", dependencies: ["RemoteTVCore", "LGWebOS"]),
-        .executableTarget(name: "lgremote-check", dependencies: ["RemoteTVCore", "LGWebOS"]),
     ]
 )

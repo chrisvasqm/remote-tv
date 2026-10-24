@@ -80,8 +80,6 @@ To add one, say Samsung Tizen:
 
 ```sh
 swift build
-# read-only check against a real TV; the first run shows a pairing prompt on the TV
-swift run lgremote-check <tv-ip> <key-dir> [screen.jpg]
 ```
 
 ## Releases
