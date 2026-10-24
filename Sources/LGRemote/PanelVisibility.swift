@@ -32,13 +32,16 @@ struct PanelVisibility: NSViewRepresentable {
                     guard let window else { return }
                     self?.onChange?(window.occlusionState.contains(.visible))
                 },
-                NotificationCenter.default.addObserver(
-                    forName: NSWindow.didResizeNotification, object: window, queue: .main
-                ) { [weak window] _ in
-                    guard let window, let top = window.screen?.visibleFrame.maxY else { return }
-                    window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
-                },
-            ]
+            ] + [NSWindow.didResizeNotification, NSWindow.didMoveNotification].map { name in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak window] _ in
+                    // SwiftUI places the window after posting the notification, so pin it on the next turn.
+                    DispatchQueue.main.async {
+                        guard let window, let top = window.screen?.visibleFrame.maxY,
+                              abs(window.frame.maxY - top) > 0.5 else { return }
+                        window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
+                    }
+                }
+            }
             onChange?(window.occlusionState.contains(.visible))
         }
     }
