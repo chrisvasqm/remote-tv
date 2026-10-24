@@ -1,5 +1,6 @@
 import Foundation
-import LGRemoteKit
+import LGWebOS
+import RemoteTVCore
 
 // Read-only smoke test against a real TV:
 //   swift run lgremote-check <tv-ip> <key-dir> [screenshot.jpg]
@@ -11,7 +12,7 @@ guard arguments.count >= 3 else {
     exit(2)
 }
 
-let client = TVClient(host: arguments[1], keyStore: FileKeyStore(directory: URL(fileURLWithPath: arguments[2], isDirectory: true)))
+let client = WebOSClient(host: arguments[1], keyStore: FileKeyStore(directory: URL(fileURLWithPath: arguments[2], isDirectory: true)))
 
 func check(_ name: String, _ body: () async throws -> String) async -> Bool {
     do {
@@ -29,7 +30,7 @@ results.append(await check("connect") {
     return "registered"
 })
 results.append(await check("foreground app") { try await client.foregroundAppId() ?? "none" })
-results.append(await check("home apps") { try await client.homeApps().map(\.title).joined(separator: ", ") })
+results.append(await check("home apps") { try await client.apps().map(\.title).joined(separator: ", ") })
 results.append(await check("inputs") { try await client.inputs().map(\.label).joined(separator: ", ") })
 results.append(await check("volume") {
     let volume = try await client.volume()

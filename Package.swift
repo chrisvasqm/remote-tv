@@ -2,11 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "LGRemote",
+    name: "RemoteTV",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "LGRemoteKit"),
-        .executableTarget(name: "LGRemote", dependencies: ["LGRemoteKit"]),
-        .executableTarget(name: "lgremote-check", dependencies: ["LGRemoteKit"]),
+        // Brand-neutral: the TV protocol, pairing key storage, Wake-on-LAN.
+        .target(name: "RemoteTVCore"),
+        // One target per brand, each implementing RemoteTVCore's TV protocol.
+        .target(name: "LGWebOS", dependencies: ["RemoteTVCore"]),
+        .executableTarget(name: "RemoteTV", dependencies: ["RemoteTVCore", "LGWebOS"]),
+        .executableTarget(name: "lgremote-check", dependencies: ["RemoteTVCore", "LGWebOS"]),
     ]
 )

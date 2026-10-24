@@ -1,6 +1,6 @@
 import AppKit
 import ImageIO
-import LGRemoteKit
+import RemoteTVCore
 import os
 
 private let log = Logger(subsystem: "com.chrisvasqm.lgremote", category: "remote")
@@ -29,14 +29,12 @@ final class RemoteModel: ObservableObject {
     @Published var lastMessageSent: String?
 
     private let keyStore = FileKeyStore.appSupport
-    private var client: TVClient?
+    private var client: (any TV)?
     /// The address a connect is running for; a connect to another address replaces it.
     private var connectingHost: String?
     /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
     private var autoReconnect = true
     private var blackFrames = 0
-    /// Smooth mode: the download of the previous capture, running while the TV captures the next.
-    private var pendingDownload: Task<Data, Error>?
     private var frameTimes: [ContinuousClock.Instant] = []
     /// Frames shown per second over the last few seconds.
     @Published private(set) var framesPerSecond: Double?
@@ -66,7 +64,7 @@ final class RemoteModel: ObservableObject {
 
     var foregroundTitle: String {
         guard let id = foregroundAppId else { return "–" }
-        if id == TVApp.homeId { return "Home" }
+        if id == brand.homeAppId { return "Home" }
         return apps.first { $0.id == id }?.title ?? id
     }
 
@@ -79,13 +77,13 @@ final class RemoteModel: ObservableObject {
         guard !host.isEmpty, connectingHost != host else { return }
         connectingHost = host
         defer { if connectingHost == host { connectingHost = nil } }
-        let client: TVClient
+        let client: any TV
         if let current = self.client, clientHost == host {
             client = current
         } else {
             dropClient()
             resetTVState()
-            client = TVClient(host: host, keyStore: keyStore)
+            client = brand.makeTV(host: host, keyStore: keyStore)
             await client.setDisconnectHandler { [weak self, weak client] in
                 Task { @MainActor in
                     if let client { self?.clientDropped(client) }
@@ -100,7 +98,7 @@ final class RemoteModel: ObservableObject {
             guard client === self.client else { return }
             status = .connected
             lastError = nil
-            async let apps = client.homeApps()
+            async let apps = client.apps()
             async let inputs = client.inputs()
             let (loadedApps, loadedInputs) = ((try? await apps) ?? [], (try? await inputs) ?? [])
             guard client === self.client else { return }
@@ -146,7 +144,7 @@ final class RemoteModel: ObservableObject {
                         lastInfo = started
                         await refreshInfo()
                     }
-                    if due || !screenIsProtected { await refreshScreen() }
+                    if (due || !screenIsProtected) && brand.capabilities.contains(.screenshot) { await refreshScreen() }
                 case .idle, .unreachable, .networkBlocked:
                     if autoReconnect && started - lastConnect >= .seconds(10) {
                         lastConnect = started
@@ -157,7 +155,7 @@ final class RemoteModel: ObservableObject {
                 }
                 // Start the next capture as soon as one finishes while the picture
                 // is live; everything else ticks once a second.
-                let live = status == .connected && !screenIsProtected
+                let live = status == .connected && !screenIsProtected && brand.capabilities.contains(.screenshot)
                 let interval: Duration = live ? .milliseconds(20) : .seconds(1)
                 try? await Task.sleep(until: started + interval, clock: clock)
             }
@@ -167,8 +165,7 @@ final class RemoteModel: ObservableObject {
     private func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
-        pendingDownload?.cancel()
-        pendingDownload = nil
+        Task { [client] in await client?.dropPendingFrame() }
     }
 
     private func refreshInfo() async {
@@ -192,15 +189,10 @@ final class RemoteModel: ObservableObject {
         do {
             let data: Data
             if !screenIsProtected {
-                // Capture the next frame while the previous one downloads.
-                let url = try await client.capture()
-                let previous = pendingDownload
-                pendingDownload = Task { try await client.download(url) }
-                guard let previous else { return }
-                data = try await previous.value
+                guard let next = try await client.nextFrame() else { return }
+                data = next
             } else {
-                pendingDownload?.cancel()
-                pendingDownload = nil
+                await client.dropPendingFrame()
                 framesPerSecond = nil
                 data = try await client.screenshot()
             }
@@ -223,7 +215,7 @@ final class RemoteModel: ObservableObject {
 
     /// A timeout means the TV went away without closing the socket (power or Wi-Fi
     /// lost): drop the connection so the poll loop starts reconnecting.
-    private func report(_ error: Error, from failed: TVClient) async {
+    private func report(_ error: Error, from failed: any TV) async {
         guard failed === client else { return }
         lastError = error.localizedDescription
         if case TVError.timeout = error { await failed.disconnect() }
@@ -238,8 +230,7 @@ final class RemoteModel: ObservableObject {
     }
 
     private func resetTVState() {
-        pendingDownload?.cancel()
-        pendingDownload = nil
+        Task { [client] in await client?.dropPendingFrame() }
         frameTimes = []
         framesPerSecond = nil
         screenshot = nil
@@ -252,7 +243,7 @@ final class RemoteModel: ObservableObject {
         volume = nil
     }
 
-    private func clientDropped(_ dropped: TVClient) {
+    private func clientDropped(_ dropped: any TV) {
         guard dropped === client, status == .connected else { return }
         status = .unreachable
     }
@@ -268,9 +259,9 @@ final class RemoteModel: ObservableObject {
 
     // MARK: - Actions
 
-    func press(_ button: String) { run { try await $0.press(button) } }
-    func launch(_ app: TVApp) { run { try await $0.launch(app.id) } }
-    func switchInput(_ input: TVInput) { run { try await $0.switchInput(input.id) } }
+    func press(_ key: RemoteKey) { run { try await $0.press(key) } }
+    func launch(_ app: TVApp) { run { try await $0.launch(app) } }
+    func switchInput(_ input: TVInput) { run { try await $0.switchInput(input) } }
     func play() { run { try await $0.play() } }
     func pause() { run { try await $0.pause() } }
     func stop() { run { try await $0.stop() } }
@@ -285,8 +276,8 @@ final class RemoteModel: ObservableObject {
     }
 
     func closeForegroundApp() {
-        guard let id = foregroundAppId, id != TVApp.homeId else { return }
-        run { try await $0.close(id) }
+        guard let id = foregroundAppId, id != brand.homeAppId else { return }
+        run { try await $0.close(appId: id) }
     }
 
     /// Pauses what is playing and turns the picture off, leaving the TV on.
@@ -342,7 +333,7 @@ final class RemoteModel: ObservableObject {
                 await connect()
             }
             if status != .connected {
-                lastError = "The TV did not turn on. Check that Turn on via Wi-Fi is on in the TV's settings, under General > Devices > TV On With Mobile."
+                lastError = "The TV did not turn on. \(brand.wakeHelp)"
             }
         }
     }
@@ -356,7 +347,7 @@ final class RemoteModel: ObservableObject {
         resetTVState()
     }
 
-    private func run(_ action: @escaping (TVClient) async throws -> Void) {
+    private func run(_ action: @escaping (any TV) async throws -> Void) {
         guard let client else { return }
         Task {
             do {

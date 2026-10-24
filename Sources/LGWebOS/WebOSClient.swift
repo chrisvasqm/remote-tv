@@ -1,34 +1,12 @@
 import Foundation
-
-public enum TVError: LocalizedError {
-    case notConnected
-    case invalidAddress(String)
-    case certificateChanged
-    case pairingRejected(String)
-    case timeout(String)
-    case tv(String)
-    case badResponse(String)
-
-    public var errorDescription: String? {
-        switch self {
-        case .notConnected: return "Not connected to the TV."
-        case .invalidAddress(let host): return "\"\(host)\" is not a valid TV address."
-        case .certificateChanged:
-            return "The TV at this address has a different security certificate than when it was paired. If you reset or replaced the TV, unpair this Mac and pair again."
-        case .pairingRejected(let reason): return "The TV refused pairing: \(reason)"
-        case .timeout(let what): return "The TV did not answer: \(what)"
-        case .tv(let message): return "The TV answered with an error: \(message)"
-        case .badResponse(let what): return "Unexpected answer from the TV: \(what)"
-        }
-    }
-}
+import RemoteTVCore
 
 /// Talks to an LG webOS TV over its local SSAP WebSocket API (wss, port 3001).
 ///
 /// Pairing uses an unsigned manifest: recent firmware rejects the signed manifest that
 /// third-party clients share ("403 Pairing rejected: blacklisted certificate detected"),
 /// but still accepts an unsigned one after the user confirms the prompt on the TV.
-public actor TVClient {
+public actor WebOSClient: TV {
     public typealias JSON = [String: Any]
     static let port = 3001
     private static let requestTimeout: Duration = .seconds(10)
@@ -43,6 +21,8 @@ public actor TVClient {
     private var pending: [String: (reply: CheckedContinuation<JSON, Error>, timeout: Task<Void, Never>)] = [:]
     private var nextId = 0
     private var onDisconnect: (@Sendable () -> Void)?
+    /// The live view's previous capture, downloading while the TV captures the next.
+    private var pendingFrame: Task<Data, Error>?
 
     public init(host: String, keyStore: KeyStore) {
         self.host = host
@@ -98,6 +78,7 @@ public actor TVClient {
 
     /// Disconnects and releases the URL session. The client cannot be used afterwards.
     public func shutdown() {
+        dropPendingFrame()
         disconnect()
         session.invalidateAndCancel()
     }
@@ -108,9 +89,9 @@ public actor TVClient {
         try await send(type: "request", uri: uri, payload: payload, timeout: Self.requestTimeout)
     }
 
-    /// Presses a remote button (UP, DOWN, LEFT, RIGHT, ENTER, BACK, HOME, MENU, ...).
+    /// Presses a remote button by its webOS name (UP, ENTER, BACK, HOME, MENU, ...).
     /// Long presses are not supported by the TV's pointer socket.
-    public func press(_ button: String) async throws {
+    public func press(button: String) async throws {
         try await pointer().send(.string("type:button\nname:\(button)\n\n"))
     }
 
@@ -124,9 +105,24 @@ public actor TVClient {
         try await download(capture())
     }
 
+    /// Captures the next frame while the previous one downloads. The TV captures one
+    /// frame at a time into the same file, so captures can't overlap each other, but a
+    /// download can overlap the next capture: about 3 frames a second instead of 2.
+    public func nextFrame() async throws -> Data? {
+        let url = try await capture()
+        let previous = pendingFrame
+        pendingFrame = Task { try await download(url) }
+        return try await previous?.value
+    }
+
+    public func dropPendingFrame() {
+        pendingFrame?.cancel()
+        pendingFrame = nil
+    }
+
     /// Asks the TV to capture the screen and returns where to fetch the image.
     /// The TV captures one frame at a time and reuses the same file for each.
-    public func capture() async throws -> URL {
+    private func capture() async throws -> URL {
         let response = try await request("ssap://tv/executeOneShot")
         guard let uri = response["imageUri"] as? String, let url = onTVHost(uri) else {
             throw TVError.badResponse("screenshot without an image address")
@@ -135,7 +131,7 @@ public actor TVClient {
     }
 
     /// Fetches a captured image. Runs outside the actor so it can overlap the next capture.
-    public nonisolated func download(_ url: URL) async throws -> Data {
+    private nonisolated func download(_ url: URL) async throws -> Data {
         try await session.data(from: url).0
     }
 

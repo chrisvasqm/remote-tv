@@ -1,4 +1,4 @@
-import LGRemoteKit
+import RemoteTVCore
 import SwiftUI
 
 struct RemoteView: View {
@@ -24,9 +24,9 @@ struct RemoteView: View {
             if showSettings {
                 settings
             } else if model.status == .connected {
-                screen
+                if can(.screenshot) { screen }
                 controls
-                appKeys
+                if can(.apps) { appKeys }
                 if showMessages { messages }
             } else {
                 offline
@@ -55,13 +55,13 @@ struct RemoteView: View {
     private var header: some View {
         HStack(spacing: 8) {
             if model.status == .connected {
-                powerKey
-                screenKey
+                if can(.powerOff) { powerKey }
+                if can(.screenOff) { screenKey }
             }
             Circle().fill(statusColor).frame(width: 6, height: 6)
             Text(statusText).font(.caption.weight(.medium)).foregroundStyle(Remote.label)
             Spacer()
-            if model.status == .connected { inputMenu }
+            if model.status == .connected && can(.inputs) { inputMenu }
         }
     }
 
@@ -137,7 +137,7 @@ struct RemoteView: View {
                 HStack(spacing: 6) {
                     Circle().fill(.red).frame(width: 6, height: 6)
                     Text(model.foregroundTitle).font(.caption.weight(.semibold))
-                    if model.foregroundAppId != TVApp.homeId {
+                    if model.foregroundAppId != brand.homeAppId {
                         Button { model.closeForegroundApp() } label: {
                             Image(systemName: "xmark").font(.caption2.weight(.bold))
                         }
@@ -178,13 +178,18 @@ struct RemoteView: View {
                 Spacer()
                 dpad
                 Spacer()
-                rocker("Ch", up: ("chevron.up", "Channel up", { model.press("CHANNELUP") }),
-                       down: ("chevron.down", "Channel down", { model.press("CHANNELDOWN") }))
+                if can(.channels) {
+                    rocker("Ch", up: ("chevron.up", "Channel up", { model.press(.channelUp) }),
+                           down: ("chevron.down", "Channel down", { model.press(.channelDown) }))
+                } else {
+                    // Keeps the wheel centred.
+                    Color.clear.frame(width: 38, height: 1)
+                }
             }
             HStack(spacing: 12) {
-                key("arrow.uturn.backward", "Back (Delete)") { model.press("BACK") }
-                key("house.fill", "Home") { model.press("HOME") }
-                key("gearshape.fill", "TV settings") { model.press("MENU") }
+                key("arrow.uturn.backward", "Back (Delete)") { model.press(.back) }
+                key("house.fill", "Home") { model.press(.home) }
+                key("gearshape.fill", "TV settings") { model.press(.settings) }
                 key(model.volume?.muted == true ? "speaker.slash.fill" : "speaker.wave.2.fill", "Mute") {
                     model.toggleMute()
                 }
@@ -201,12 +206,12 @@ struct RemoteView: View {
         .focusEffectDisabled()
         .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow, .return, .delete, .space]) { press in
             switch press.key {
-            case .upArrow: model.press("UP")
-            case .downArrow: model.press("DOWN")
-            case .leftArrow: model.press("LEFT")
-            case .rightArrow: model.press("RIGHT")
-            case .return: model.press("ENTER")
-            case .delete: model.press("BACK")
+            case .upArrow: model.press(.up)
+            case .downArrow: model.press(.down)
+            case .leftArrow: model.press(.left)
+            case .rightArrow: model.press(.right)
+            case .return: model.press(.ok)
+            case .delete: model.press(.back)
             default: model.pause()
             }
             return .handled
@@ -222,11 +227,11 @@ struct RemoteView: View {
             Circle().fill(Remote.key)
                 .overlay(Circle().strokeBorder(Remote.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
-            arrowKey("chevron.up", "Up (↑)", "UP", arrow).offset(y: -(ring / 2 - 18))
-            arrowKey("chevron.down", "Down (↓)", "DOWN", arrow).offset(y: ring / 2 - 18)
-            arrowKey("chevron.left", "Left (←)", "LEFT", arrow).offset(x: -(ring / 2 - 18))
-            arrowKey("chevron.right", "Right (→)", "RIGHT", arrow).offset(x: ring / 2 - 18)
-            Button { model.press("ENTER") } label: {
+            arrowKey("chevron.up", "Up (↑)", .up, arrow).offset(y: -(ring / 2 - 18))
+            arrowKey("chevron.down", "Down (↓)", .down, arrow).offset(y: ring / 2 - 18)
+            arrowKey("chevron.left", "Left (←)", .left, arrow).offset(x: -(ring / 2 - 18))
+            arrowKey("chevron.right", "Right (→)", .right, arrow).offset(x: ring / 2 - 18)
+            Button { model.press(.ok) } label: {
                 Text("OK").font(.system(size: 13, weight: .semibold))
             }
             .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 46, height: 46), fill: Remote.okKey))
@@ -235,8 +240,8 @@ struct RemoteView: View {
         .frame(width: ring, height: ring)
     }
 
-    private func arrowKey(_ symbol: String, _ help: String, _ button: String, _ size: CGSize) -> some View {
-        Button { model.press(button) } label: {
+    private func arrowKey(_ symbol: String, _ help: String, _ key: RemoteKey, _ size: CGSize) -> some View {
+        Button { model.press(key) } label: {
             Image(systemName: symbol).font(.system(size: 12, weight: .bold))
         }
         .buttonStyle(KeyStyle(shape: .circle, size: size, fill: .clear))
@@ -299,7 +304,7 @@ struct RemoteView: View {
         let columns = 3
         let spacing: CGFloat = 5
         let width = (Self.previewWidth - spacing * CGFloat(columns - 1)) / CGFloat(columns)
-        let apps = launchableApps
+        let apps = model.apps
         let rows = stride(from: 0, to: apps.count, by: columns).map { Array(apps[$0..<min($0 + columns, apps.count)]) }
         return VStack(spacing: spacing) {
             ForEach(rows, id: \.first?.id) { row in
@@ -318,11 +323,6 @@ struct RemoteView: View {
                 }
             }
         }
-    }
-
-    /// HDMI ports are under Input, so they are left out of the app grid.
-    private var launchableApps: [TVApp] {
-        model.apps.filter { !$0.id.hasPrefix("com.webos.app.hdmi") }
     }
 
     // MARK: - Messages
@@ -365,7 +365,9 @@ struct RemoteView: View {
                 case _ where model.isWaking:
                     ProgressView().controlSize(.small)
                 default:
-                    Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
+                    if can(.wakeOnLAN) {
+                        Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
+                    }
                 }
                 if model.status != .pairing && model.status != .connecting && !model.isWaking {
                     Button("Try again") { Task { await model.reconnect() } }
@@ -380,7 +382,7 @@ struct RemoteView: View {
             TextField("192.168.0.10", text: $draftHost)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveSettings)
-            Text("Find it on the TV under Settings > Support > TV information. The first time, accept the prompt on the TV with its remote.")
+            Text(brand.addressHelp)
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Connect", action: saveSettings)
@@ -396,7 +398,7 @@ struct RemoteView: View {
     private var footer: some View {
         HStack {
             Button(showSettings ? "Done" : "Settings") { showSettings.toggle() }
-            if model.status == .connected && !showSettings {
+            if model.status == .connected && !showSettings && can(.messages) {
                 Button(showMessages ? "Hide message" : "Message") { showMessages.toggle() }
                     .help("Show a message on the TV")
             }
@@ -409,6 +411,10 @@ struct RemoteView: View {
     }
 
     // MARK: - Helpers
+
+    private func can(_ capability: TVCapabilities) -> Bool {
+        brand.capabilities.contains(capability)
+    }
 
     private func key(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -439,7 +445,7 @@ struct RemoteView: View {
 
     private var statusText: String {
         switch model.status {
-        case .idle: return "LG TV"
+        case .idle: return brand.displayName
         case .connecting: return "Connecting…"
         case .pairing: return "Waiting for the TV"
         case .connected: return "TV is on"

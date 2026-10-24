@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct LGRemoteApp: App {
+struct RemoteTVApp: App {
     @StateObject private var model = RemoteModel()
 
     var body: some Scene {

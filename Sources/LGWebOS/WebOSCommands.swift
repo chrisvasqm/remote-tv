@@ -1,37 +1,36 @@
 import Foundation
+import RemoteTVCore
 
-public struct TVApp: Identifiable, Hashable, Sendable {
-    public let id: String
-    public let title: String
+/// LG webOS TVs. The app's only brand-specific line picks this.
+public struct LGWebOSBrand: TVBrand {
+    public init() {}
 
+    public let displayName = "LG TV"
+    public let capabilities: TVCapabilities = [
+        .screenshot, .apps, .inputs, .channels, .messages, .screenOff, .powerOff, .wakeOnLAN,
+    ]
     /// The webOS Home screen; reported as the foreground app when nothing else runs.
-    public static let homeId = "com.webos.app.home"
-    /// The "Apps" launcher tile on the Home row.
-    static let launcherId = "com.webos.app.discovery"
+    public let homeAppId: String? = "com.webos.app.home"
+    public let addressHelp = "Find it on the TV under Settings > Support > TV information. The first time, accept the prompt on the TV with its remote."
+    public let wakeHelp = "Check that Turn on via Wi-Fi is on in the TV's settings, under General > Devices > TV On With Mobile."
+
+    public func makeTV(host: String, keyStore: KeyStore) -> any TV {
+        WebOSClient(host: host, keyStore: keyStore)
+    }
 }
 
-public struct TVInput: Identifiable, Hashable, Sendable {
-    public let id: String
-    public let label: String
-    public let connected: Bool
-}
-
-public struct TVVolume: Sendable {
-    public let level: Int
-    public let muted: Bool
-}
-
-/// Typed wrappers for the SSAP endpoints this app uses. Each one was checked
-/// against a webOS 25 TV (10.3.2) before being added.
-public extension TVClient {
-    /// The apps shown on the Home row, in Home order, without hidden ones
-    /// and without the "Apps" launcher tile.
-    func homeApps() async throws -> [TVApp] {
+/// The SSAP endpoints behind each `TV` call. Each one was checked against a
+/// webOS 25 TV (10.3.2) before being added.
+public extension WebOSClient {
+    /// The apps shown on the Home row, in Home order, without hidden ones, the
+    /// "Apps" launcher tile, or HDMI ports (those are under Input).
+    func apps() async throws -> [TVApp] {
         let response = try await request("ssap://com.webos.applicationManager/listLaunchPoints")
         let points = response["launchPoints"] as? [JSON] ?? []
         return points.compactMap { point in
             guard point["hidden"] as? Bool != true,
-                  let id = point["id"] as? String, id != TVApp.launcherId,
+                  let id = point["id"] as? String, id != "com.webos.app.discovery",
+                  !id.hasPrefix("com.webos.app.hdmi"),
                   let title = point["title"] as? String else { return nil }
             return TVApp(id: id, title: title)
         }
@@ -41,11 +40,11 @@ public extension TVClient {
         try await request("ssap://com.webos.applicationManager/getForegroundAppInfo")["appId"] as? String
     }
 
-    func launch(_ appId: String) async throws {
-        try await request("ssap://system.launcher/launch", ["id": appId])
+    func launch(_ app: TVApp) async throws {
+        try await request("ssap://system.launcher/launch", ["id": app.id])
     }
 
-    func close(_ appId: String) async throws {
+    func close(appId: String) async throws {
         try await request("ssap://system.launcher/close", ["id": appId])
     }
 
@@ -58,8 +57,24 @@ public extension TVClient {
         }
     }
 
-    func switchInput(_ inputId: String) async throws {
-        try await request("ssap://tv/switchInput", ["inputId": inputId])
+    func switchInput(_ input: TVInput) async throws {
+        try await request("ssap://tv/switchInput", ["inputId": input.id])
+    }
+
+    func press(_ key: RemoteKey) async throws {
+        let name = switch key {
+        case .up: "UP"
+        case .down: "DOWN"
+        case .left: "LEFT"
+        case .right: "RIGHT"
+        case .ok: "ENTER"
+        case .back: "BACK"
+        case .home: "HOME"
+        case .settings: "MENU"
+        case .channelUp: "CHANNELUP"
+        case .channelDown: "CHANNELDOWN"
+        }
+        try await press(button: name)
     }
 
     func volume() async throws -> TVVolume {

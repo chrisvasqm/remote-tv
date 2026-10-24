@@ -56,6 +56,26 @@ allow access to the local network; allow it.
 - To unpair: **Settings > Forget pairing** in the panel. Anyone on your network
   who pairs with the TV (the TV asks first) gets the same control.
 
+## Adding a brand
+
+The app is split so another brand can be added without touching the panel:
+
+| Target | What it holds |
+|---|---|
+| `RemoteTVCore` | The `TV` and `TVBrand` protocols, neutral keys and models, the pairing key store, Wake-on-LAN |
+| `LGWebOS` | LG webOS: the SSAP client, pairing manifest, certificate pinning, and `LGWebOSBrand` |
+| `RemoteTV` | The menu-bar app. It only talks to `TV`, and names a brand in `Brand.swift` alone |
+
+To add one, say Samsung Tizen:
+
+1. Add a target, such as `SamsungTizen`, that depends on `RemoteTVCore`.
+2. Implement `TV` with an actor that talks to the TV. Map each `RemoteKey` to the brand's key codes.
+3. Implement `TVBrand`. List only the `TVCapabilities` it supports, and the panel hides the rest:
+   no `.screenshot` means no preview, no `.channels` no Ch keys, and so on. Give its own words
+   for `addressHelp` and `wakeHelp`.
+4. In `Sources/RemoteTV/Brand.swift`, return your brand instead of `LGWebOSBrand()`,
+   and add the target to the app's dependencies in `Package.swift`.
+
 ## Development
 
 ```sh

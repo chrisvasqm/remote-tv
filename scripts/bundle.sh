@@ -4,11 +4,11 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-swift build -c release --product LGRemote
+swift build -c release --product RemoteTV
 APP="build/RemoteTV.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-cp .build/release/LGRemote "$APP/Contents/MacOS/RemoteTV"
+cp .build/release/RemoteTV "$APP/Contents/MacOS/RemoteTV"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
