@@ -56,6 +56,7 @@ prompt on the TV. Allow local network access when macOS asks.
 
 ```sh
 swift build
+swift test   # needs Xcode 16+; no TV needed
 ```
 
 ## Releases

@@ -169,8 +169,8 @@ public actor WebOSClient: TV {
 
     /// The TV hands out its own IP and the plain ws:// port in URLs. Point every URL at
     /// the configured host on the TLS port, so a hostname works and TLS trust stays
-    /// limited to that host.
-    private func onTVHost(_ string: String) -> URL? {
+    /// limited to that host. Internal, not private, so tests can check it.
+    func onTVHost(_ string: String) -> URL? {
         guard var components = URLComponents(string: string) else { return nil }
         if components.scheme == "ws" || components.scheme == "wss" { components.scheme = "wss" } else { components.scheme = "https" }
         components.host = host

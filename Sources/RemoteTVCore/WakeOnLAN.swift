@@ -7,8 +7,7 @@ public enum WakeOnLAN {
     /// local network's own broadcast address, and straight to the TV's last known address,
     /// on ports 9 and 7. Some routers and Macs drop one kind but not the others.
     public static func send(mac: String, host: String) throws {
-        let bytes = mac.split(whereSeparator: { $0 == ":" || $0 == "-" }).compactMap { UInt8($0, radix: 16) }
-        guard bytes.count == 6 else { throw TVError.badResponse("invalid MAC address \(mac)") }
+        guard let bytes = parseMAC(mac) else { throw TVError.badResponse("invalid MAC address \(mac)") }
         let packet = [UInt8](repeating: 0xFF, count: 6) + Array([[UInt8]](repeating: bytes, count: 16).joined())
 
         let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -39,6 +38,22 @@ public enum WakeOnLAN {
             }
         }
         guard sentAny else { throw TVError.badResponse("magic packet not sent") }
+    }
+
+    /// The six bytes of a MAC address written as six groups of one or two hex digits,
+    /// separated by ":" or "-". Nil for anything else.
+    static func parseMAC(_ mac: String) -> [UInt8]? {
+        let separator: Character = mac.contains(":") ? ":" : "-"
+        let groups = mac.split(separator: separator, omittingEmptySubsequences: false)
+        guard groups.count == 6 else { return nil }
+        var bytes: [UInt8] = []
+        for group in groups {
+            // ASCII only: isHexDigit alone also accepts fullwidth digits.
+            guard (1...2).contains(group.count), group.allSatisfy({ $0.isASCII && $0.isHexDigit }),
+                  let byte = UInt8(group, radix: 16) else { return nil }
+            bytes.append(byte)
+        }
+        return bytes
     }
 
     /// The broadcast address of each active IPv4 network, such as 192.168.0.255.
@@ -72,10 +87,8 @@ public enum WakeOnLAN {
         guard (try? process.run()) != nil else { return nil }
         process.waitUntilExit()
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        guard let range = output.range(of: #"([0-9a-fA-F]{1,2}:){5}[0-9a-fA-F]{1,2}"#, options: .regularExpression) else {
-            return nil
-        }
-        // arp drops leading zeros ("2:f:b5:..."); pad each part back to two digits.
-        return output[range].split(separator: ":").map { $0.count == 1 ? "0\($0)" : String($0) }.joined(separator: ":")
+        // arp drops leading zeros ("2:f:b5:..."); parseMAC accepts that, and the result is padded.
+        let bytes = output.split(whereSeparator: \.isWhitespace).lazy.compactMap { parseMAC(String($0)) }.first
+        return bytes?.map { String(format: "%02x", $0) }.joined(separator: ":")
     }
 }
