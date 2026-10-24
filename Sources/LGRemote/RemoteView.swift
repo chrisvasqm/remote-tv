@@ -370,10 +370,6 @@ struct RemoteView: View {
             if model.status == .connected && !showSettings {
                 Button(showMessages ? "Hide message" : "Message") { showMessages.toggle() }
                     .help("Show a message on the TV")
-                Spacer()
-                Toggle("Smooth", isOn: $model.smoothPreview)
-                    .toggleStyle(.switch).controlSize(.mini)
-                    .help("Smooth preview: captures frames as fast as the TV allows. Uses about 250 KB per second.")
             }
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }

@@ -25,11 +25,6 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var isWaking = false
     /// The last message the TV accepted, for a short confirmation in the panel.
     @Published var lastMessageSent: String?
-    /// Smooth: capture frames back to back (about 2 per second while video plays,
-    /// since one capture takes ~0.5 s). Off: one frame a second.
-    @Published var smoothPreview: Bool = UserDefaults.standard.bool(forKey: "smoothPreview") {
-        didSet { UserDefaults.standard.set(smoothPreview, forKey: "smoothPreview") }
-    }
 
     private let keyStore = FileKeyStore.appSupport
     private var client: TVClient?
@@ -41,7 +36,7 @@ final class RemoteModel: ObservableObject {
     /// Smooth mode: the download of the previous capture, running while the TV captures the next.
     private var pendingDownload: Task<Data, Error>?
     private var frameTimes: [ContinuousClock.Instant] = []
-    /// Frames shown per second over the last few seconds, while smooth preview is on.
+    /// Frames shown per second over the last few seconds.
     @Published private(set) var framesPerSecond: Double?
     private var clientHost = ""
     private var pollTask: Task<Void, Never>?
@@ -123,10 +118,10 @@ final class RemoteModel: ObservableObject {
         }
     }
 
-    /// Live view while the panel is visible: about one frame a second, read one
-    /// after another so requests never pile up on the TV. Protected screens
-    /// (black for 5 frames in a row) and app/volume info are only checked every
-    /// third tick, or on the next tick after an action. When the TV is
+    /// Live view while the panel is visible: frames are captured back to back, each
+    /// download overlapping the next capture, so requests never pile up on the TV.
+    /// Protected screens (black for 5 frames in a row) are checked once a second,
+    /// app/volume info every 3 seconds or right after an action. When the TV is
     /// unreachable it retries the connection every 10 seconds.
     func panelVisibilityChanged(_ visible: Bool) {
         visible ? startPolling() : stopPolling()
@@ -158,10 +153,10 @@ final class RemoteModel: ObservableObject {
                 case .connecting, .pairing:
                     break
                 }
-                // Smooth mode starts the next capture as soon as one finishes, but
-                // only while the picture is live; everything else ticks once a second.
-                let smooth = smoothPreview && status == .connected && !screenIsProtected
-                let interval: Duration = smooth ? .milliseconds(20) : .seconds(1)
+                // Start the next capture as soon as one finishes while the picture
+                // is live; everything else ticks once a second.
+                let live = status == .connected && !screenIsProtected
+                let interval: Duration = live ? .milliseconds(20) : .seconds(1)
                 try? await Task.sleep(until: started + interval, clock: clock)
             }
         }
@@ -191,7 +186,7 @@ final class RemoteModel: ObservableObject {
         guard let client else { return }
         do {
             let data: Data
-            if smoothPreview && !screenIsProtected {
+            if !screenIsProtected {
                 // Capture the next frame while the previous one downloads.
                 let url = try await client.capture()
                 let previous = pendingDownload
@@ -232,7 +227,6 @@ final class RemoteModel: ObservableObject {
     }
 
     private func countFrame() {
-        guard smoothPreview else { return }
         let now = ContinuousClock.now
         frameTimes = frameTimes.filter { now - $0 < .seconds(3) } + [now]
         framesPerSecond = frameTimes.count > 1 ? Double(frameTimes.count) / 3 : nil
