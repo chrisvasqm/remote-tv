@@ -12,7 +12,7 @@ extension RemoteView {
                 if can(.screenOff) { screenKey }
             }
             Circle().fill(statusColor).frame(width: 6, height: 6)
-            Text(statusText).font(.caption.weight(.medium)).foregroundStyle(Remote.label)
+            Text(statusText).font(.caption.weight(.medium)).foregroundStyle(RemotePalette.label)
             Spacer()
             if model.status == .connected && can(.inputs) { inputMenu }
         }
@@ -40,7 +40,7 @@ extension RemoteView {
         .buttonStyle(KeyStyle(
             shape: powerArmed ? .capsule : .circle,
             size: CGSize(width: 26, height: 26),
-            fill: powerArmed ? Remote.powerArmed : Remote.power
+            fill: powerArmed ? RemotePalette.powerArmed : RemotePalette.power
         ))
         .fixedSize()
         .animation(.spring(duration: 0.25), value: powerArmed)
@@ -55,7 +55,7 @@ extension RemoteView {
         } label: {
             Image(systemName: model.screenIsOff ? "sun.max.fill" : "moon.fill").font(.system(size: 11, weight: .bold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 26, height: 26), fill: Remote.key))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 26, height: 26), fill: RemotePalette.key))
         .help(model.screenIsOff ? "Turn the screen on" : "Pause and turn the screen off (the TV stays on)")
         .accessibilityLabel(model.screenIsOff ? "Turn the screen on" : "Turn the screen off")
     }

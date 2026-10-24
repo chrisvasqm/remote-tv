@@ -26,7 +26,7 @@ extension RemoteView {
             }
         }
         .font(.callout)
-        .foregroundStyle(Remote.label)
+        .foregroundStyle(RemotePalette.label)
     }
 
     private var trimmedMessage: String { message.trimmingCharacters(in: .whitespaces) }

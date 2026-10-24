@@ -22,7 +22,7 @@ extension RemoteView {
                         }
                         .buttonStyle(KeyStyle(
                             shape: .capsule, size: CGSize(width: width, height: 22),
-                            fill: app.id == model.foregroundAppId ? Remote.active : Remote.key
+                            fill: app.id == model.foregroundAppId ? RemotePalette.active : RemotePalette.key
                         ))
                         .frame(width: width)
                     }

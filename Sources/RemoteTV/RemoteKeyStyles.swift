@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The remote's materials: a graphite body, slightly lighter keys, a red power key.
-enum Remote {
+enum RemotePalette {
     static let body = Color(red: 0.11, green: 0.11, blue: 0.13)
     static let key = Color(red: 0.19, green: 0.19, blue: 0.22)
     static let okKey = Color(red: 0.27, green: 0.27, blue: 0.31)
@@ -24,13 +24,13 @@ struct KeyStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(Remote.label)
+            .foregroundStyle(RemotePalette.label)
             .frame(minWidth: size.width, maxWidth: shape == .capsule ? .infinity : size.width)
             .frame(height: size.height)
             .background {
                 if let fill {
                     Capsule().fill(fill)
-                        .overlay(Capsule().strokeBorder(Remote.edge, lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(RemotePalette.edge, lineWidth: 1))
                         .shadow(color: .black.opacity(configuration.isPressed ? 0 : 0.5), radius: 2, y: configuration.isPressed ? 0 : 2)
                 }
             }
@@ -45,7 +45,7 @@ struct KeyStyle: ButtonStyle {
 struct RockerHalfStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(Remote.label)
+            .foregroundStyle(RemotePalette.label)
             .background(Color.white.opacity(configuration.isPressed ? 0.12 : 0))
             .contentShape(Rectangle())
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)

@@ -57,8 +57,8 @@ extension RemoteView {
         let ring: CGFloat = 116
         let reach = ring / 2 - 18
         return ZStack {
-            Circle().fill(Remote.key)
-                .overlay(Circle().strokeBorder(Remote.edge, lineWidth: 1))
+            Circle().fill(RemotePalette.key)
+                .overlay(Circle().strokeBorder(RemotePalette.edge, lineWidth: 1))
                 .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
             arrowKey("chevron.up", "Up (↑)", .up).offset(y: -reach)
             arrowKey("chevron.down", "Down (↓)", .down).offset(y: reach)
@@ -67,7 +67,7 @@ extension RemoteView {
             Button { model.press(.ok) } label: {
                 Text("OK").font(.system(size: 13, weight: .semibold))
             }
-            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 46, height: 46), fill: Remote.okKey))
+            .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 46, height: 46), fill: RemotePalette.okKey))
             .help("OK (Return)")
         }
         .frame(width: ring, height: ring)
@@ -86,7 +86,7 @@ extension RemoteView {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 12, weight: .semibold))
         }
-        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 30, height: 30), fill: Remote.key))
+        .buttonStyle(KeyStyle(shape: .circle, size: CGSize(width: 30, height: 30), fill: RemotePalette.key))
         .help(help)
         .accessibilityLabel(help)
     }

@@ -6,7 +6,7 @@ extension RemoteView {
 
     var offline: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(offlineText).font(.callout).foregroundStyle(Remote.label).fixedSize(horizontal: false, vertical: true)
+            Text(offlineText).font(.callout).foregroundStyle(RemotePalette.label).fixedSize(horizontal: false, vertical: true)
             HStack {
                 if model.status == .networkBlocked {
                     Button("Open Local Network settings") { LocalNetworkAccess.openSettings() }
@@ -25,7 +25,7 @@ extension RemoteView {
 
     var settings: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TV address").font(.subheadline.weight(.semibold)).foregroundStyle(Remote.label)
+            Text("TV address").font(.subheadline.weight(.semibold)).foregroundStyle(RemotePalette.label)
             TextField("192.168.0.10", text: $draftHost)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveSettings)

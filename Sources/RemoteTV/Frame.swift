@@ -6,7 +6,8 @@ struct Frame: @unchecked Sendable {
     let image: NSImage
     let isNearlyBlack: Bool
 
-    static func decode(_ data: Data) async -> Frame? {
+    /// `width` is the preview's width in points; the frame is decoded at twice that for Retina.
+    static func decode(_ data: Data, width: CGFloat) async -> Frame? {
         await Task.detached(priority: .utility) {
             // A frame read while the TV was overwriting its file is cut short: skip it.
             guard data.count > 2, data.suffix(2).elementsEqual([0xFF, 0xD9]),
@@ -14,8 +15,7 @@ struct Frame: @unchecked Sendable {
                   CGImageSourceGetStatus(source) == .statusComplete,
                   let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                       kCGImageSourceCreateThumbnailFromImageAlways: true,
-                      // The preview is 252 pt wide: 504 px on a Retina screen.
-                      kCGImageSourceThumbnailMaxPixelSize: 560,
+                      kCGImageSourceThumbnailMaxPixelSize: Int(width * 2),
                   ] as CFDictionary) else { return nil }
             let image = NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width, height: thumbnail.height))
             return Frame(image: image, isNearlyBlack: nearlyBlack(thumbnail))

@@ -31,14 +31,14 @@ struct RemoteView: View {
             }
             if let error = model.lastError {
                 Label(error, systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(Remote.label.opacity(0.7)).lineLimit(3)
+                    .font(.caption).foregroundStyle(RemotePalette.label.opacity(0.7)).lineLimit(3)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             footer
         }
         .padding(Self.padding)
         .frame(width: Self.panelWidth)
-        .background(Remote.body)
+        .background(RemotePalette.body)
         .environment(\.colorScheme, .dark)
         .background(PanelVisibility { model.panelVisibilityChanged($0) })
         .onAppear {
@@ -59,7 +59,7 @@ struct RemoteView: View {
         }
         .buttonStyle(.borderless)
         .font(.caption)
-        .foregroundStyle(Remote.label.opacity(0.6))
+        .foregroundStyle(RemotePalette.label.opacity(0.6))
     }
 
     // MARK: - Helpers

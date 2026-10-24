@@ -16,11 +16,11 @@ extension RemoteView {
         }
         .frame(width: 38, height: 96)
         .overlay {
-            Text(name).font(.caption2.weight(.semibold).monospacedDigit()).foregroundStyle(Remote.label.opacity(0.6))
+            Text(name).font(.caption2.weight(.semibold).monospacedDigit()).foregroundStyle(RemotePalette.label.opacity(0.6))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .background(Capsule().fill(Remote.key).overlay(Capsule().strokeBorder(Remote.edge, lineWidth: 1)))
+        .background(Capsule().fill(RemotePalette.key).overlay(Capsule().strokeBorder(RemotePalette.edge, lineWidth: 1)))
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
     }
