@@ -25,26 +25,37 @@ extension RemoteModel {
 
     /// Pauses what is playing and turns the picture off, leaving the TV on.
     func turnScreenOff() {
-        screenIsOff = true
-        run {
+        setScreenOff(true) {
             try? await $0.pause()
             try await $0.setScreen(on: false)
         }
     }
 
     func turnScreenOn() {
-        screenIsOff = false
-        run { try await $0.setScreen(on: true) }
+        setScreenOff(false) { try await $0.setScreen(on: true) }
     }
 
-    private func run(_ action: @escaping (any TV) async throws -> Void) {
+    /// Shows the new screen state at once, and puts it back if the TV refuses.
+    private func setScreenOff(_ off: Bool, _ action: @escaping (any TV) async throws -> Void) {
+        guard client != nil else { return }
+        screenIsOff = off
+        run(action, onFailure: { $0.screenIsOff = !off })
+    }
+
+    private func run(
+        _ action: @escaping (any TV) async throws -> Void,
+        onFailure: ((RemoteModel) -> Void)? = nil
+    ) {
         guard let client else { return }
         Task {
             do {
                 try await action(client)
+                // A result from a client that was replaced meanwhile says nothing about the new one.
+                guard client === self.client else { return }
                 refreshSoon = true
                 lastError = nil
             } catch {
+                if client === self.client { onFailure?(self) }
                 await report(error, from: client)
             }
         }

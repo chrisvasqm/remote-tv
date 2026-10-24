@@ -4,8 +4,8 @@ import RemoteTVCore
 extension RemoteModel {
     /// Live view while the panel is visible: frames are captured back to back, each
     /// download overlapping the next capture, so requests never pile up on the TV.
-    /// Protected screens (black for 5 frames in a row) are checked once a second,
-    /// app/volume info every 3 seconds or right after an action. When the TV is
+    /// Protected screens (black for 5 frames in a row) are checked with the app/volume
+    /// info, every 3 seconds or right after an action. When the TV is
     /// unreachable it retries the connection every 10 seconds.
     func panelVisibilityChanged(_ visible: Bool) {
         if visible {
@@ -52,9 +52,14 @@ extension RemoteModel {
     }
 
     private func stopPolling() {
-        pollTask?.cancel()
+        let stopped = pollTask
+        stopped?.cancel()
         pollTask = nil
-        Task { [client] in await client?.dropPendingFrame() }
+        // Wait for the loop to end first, so a capture still in flight can't leave a frame behind.
+        Task { [client] in
+            await stopped?.value
+            await client?.dropPendingFrame()
+        }
     }
 
     func refreshInfo() async {

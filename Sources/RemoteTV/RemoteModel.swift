@@ -53,6 +53,8 @@ final class RemoteModel {
     func setHost(_ newHost: String) async {
         let trimmed = newHost.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Saving the same address must not drop a working connection.
+        if trimmed == host && status == .connected { return }
         host = trimmed
         UserDefaults.standard.set(host, forKey: "tvHost")
         await reconnect()

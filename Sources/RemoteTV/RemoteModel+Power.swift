@@ -25,16 +25,18 @@ extension RemoteModel {
         guard !isWaking else { return }
         isWaking = true
         lastError = nil
+        let target = host
         Task {
             defer { isWaking = false }
             let clock = ContinuousClock()
             let deadline = clock.now + .seconds(45)
             var attempt = 0
-            while clock.now < deadline && status != .connected {
+            // Stops when the user turns the TV off, unpairs or picks another TV.
+            while clock.now < deadline && status != .connected && autoReconnect && host == target {
                 // Repeat the packet a few times in case one is lost on Wi-Fi.
                 if attempt < 3 {
                     do {
-                        try WakeOnLAN.send(mac: mac, host: host)
+                        try WakeOnLAN.send(mac: mac, host: target)
                     } catch {
                         lastError = error.localizedDescription
                         return
@@ -44,7 +46,7 @@ extension RemoteModel {
                 try? await Task.sleep(for: .seconds(3))
                 await connect()
             }
-            if status != .connected {
+            if status != .connected && autoReconnect && host == target {
                 lastError = "The TV did not turn on. \(brand.wakeHelp)"
             }
         }
