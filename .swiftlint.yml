@@ -11,3 +11,12 @@ identifier_name:
 
 type_name:
   excluded: [TV]
+
+custom_rules:
+  # The model owns its state: views call its methods (intents) and never assign to it.
+  views_do_not_write_model_state:
+    name: "Views don't write model state"
+    regex: '\bmodel\.\w+\s*(=(?!=)|\+=|-=)'
+    excluded: 'RemoteModel.*\.swift'
+    message: "Call a RemoteModel method instead of assigning to its state."
+    severity: error
