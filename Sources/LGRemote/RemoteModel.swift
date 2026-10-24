@@ -21,6 +21,8 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var foregroundAppId: String?
     @Published private(set) var volume: TVVolume?
     @Published var lastError: String?
+    /// True while the app sends Wake-on-LAN packets and waits for the TV to start.
+    @Published private(set) var isWaking = false
     /// The last message the TV accepted, for a short confirmation in the panel.
     @Published var lastMessageSent: String?
     /// Smooth: capture frames back to back (about 2 per second while video plays,
@@ -302,16 +304,33 @@ final class RemoteModel: ObservableObject {
     }
 
     /// Sends the Wake-on-LAN packet; the poll loop reconnects once the TV is up.
+    /// Wakes the TV and keeps trying to connect while it starts, which takes about 10 seconds.
     func turnOn() {
         autoReconnect = true
         guard let mac = UserDefaults.standard.string(forKey: Self.macKey(host)) else {
             lastError = "Turn the TV on once with the remote so the app can learn its address."
             return
         }
-        do {
-            try WakeOnLAN.send(mac: mac)
-        } catch {
-            lastError = error.localizedDescription
+        guard !isWaking else { return }
+        isWaking = true
+        lastError = nil
+        Task {
+            defer { isWaking = false }
+            let clock = ContinuousClock()
+            let deadline = clock.now + .seconds(45)
+            var attempt = 0
+            while clock.now < deadline && status != .connected {
+                // Repeat the packet a few times in case one is lost on Wi-Fi.
+                if attempt < 3 {
+                    do { try WakeOnLAN.send(mac: mac, host: host) } catch { lastError = error.localizedDescription; return }
+                }
+                attempt += 1
+                try? await Task.sleep(for: .seconds(3))
+                await connect()
+            }
+            if status != .connected {
+                lastError = "The TV did not turn on. Check that Turn on via Wi-Fi is on in the TV's settings, under General > Devices > TV On With Mobile."
+            }
         }
     }
 

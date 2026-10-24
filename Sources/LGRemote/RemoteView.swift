@@ -331,10 +331,12 @@ struct RemoteView: View {
                         .buttonStyle(.borderedProminent)
                 case .pairing, .connecting:
                     ProgressView().controlSize(.small)
+                case _ where model.isWaking:
+                    ProgressView().controlSize(.small)
                 default:
                     Button("Turn the TV on") { model.turnOn() }.buttonStyle(.borderedProminent)
                 }
-                if model.status != .pairing && model.status != .connecting {
+                if model.status != .pairing && model.status != .connecting && !model.isWaking {
                     Button("Try again") { Task { await model.reconnect() } }
                 }
             }
@@ -412,6 +414,7 @@ struct RemoteView: View {
     }
 
     private var offlineText: String {
+        if model.isWaking && model.status != .pairing { return "Turning the TV on. This takes about 10 seconds." }
         switch model.status {
         case .pairing:
             return "The TV is asking whether to allow this Mac. Accept it with the TV remote."
