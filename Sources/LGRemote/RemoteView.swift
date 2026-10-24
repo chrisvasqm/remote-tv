@@ -23,7 +23,7 @@ struct RemoteView: View {
                 settings
             } else if model.status == .connected {
                 screen
-                Toggle("Smooth preview (about 2 frames a second)", isOn: $model.smoothPreview)
+                Toggle("Smooth preview (as fast as the TV allows)", isOn: $model.smoothPreview)
                     .toggleStyle(.switch).controlSize(.mini).font(.caption)
                     .help("Captures frames back to back. Uses more network traffic, about 250 KB per second.")
                 controls
@@ -95,6 +95,16 @@ struct RemoteView: View {
                 .background(.black.opacity(0.6), in: Capsule())
                 .foregroundStyle(.white)
                 .padding(8)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let fps = model.framesPerSecond {
+                    Text(String(format: "%.1f fps", fps))
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(.black.opacity(0.6), in: Capsule())
+                        .foregroundStyle(.white.opacity(0.8))
+                        .padding(8)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .accessibilityElement(children: .combine)

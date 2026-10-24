@@ -36,6 +36,11 @@ final class RemoteModel: ObservableObject {
     /// Off after "Turn off" or "Forget pairing" until the user asks to connect again.
     private var autoReconnect = true
     private var blackFrames = 0
+    /// Smooth mode: the download of the previous capture, running while the TV captures the next.
+    private var pendingDownload: Task<Data, Error>?
+    private var frameTimes: [ContinuousClock.Instant] = []
+    /// Frames shown per second over the last few seconds, while smooth preview is on.
+    @Published private(set) var framesPerSecond: Double?
     private var clientHost = ""
     private var pollTask: Task<Void, Never>?
     private var lastFrame: Data?
@@ -154,7 +159,7 @@ final class RemoteModel: ObservableObject {
                 // Smooth mode starts the next capture as soon as one finishes, but
                 // only while the picture is live; everything else ticks once a second.
                 let smooth = smoothPreview && status == .connected && !screenIsProtected
-                let interval: Duration = smooth ? .milliseconds(100) : .seconds(1)
+                let interval: Duration = smooth ? .milliseconds(20) : .seconds(1)
                 try? await Task.sleep(until: started + interval, clock: clock)
             }
         }
@@ -163,6 +168,8 @@ final class RemoteModel: ObservableObject {
     private func stopPolling() {
         pollTask?.cancel()
         pollTask = nil
+        pendingDownload?.cancel()
+        pendingDownload = nil
     }
 
     private func refreshInfo() async {
@@ -181,7 +188,20 @@ final class RemoteModel: ObservableObject {
     private func refreshScreen() async {
         guard let client else { return }
         do {
-            let data = try await client.screenshot()
+            let data: Data
+            if smoothPreview && !screenIsProtected {
+                // Capture the next frame while the previous one downloads.
+                let url = try await client.capture()
+                let previous = pendingDownload
+                pendingDownload = Task { try await client.download(url) }
+                guard let previous else { return }
+                data = try await previous.value
+            } else {
+                pendingDownload?.cancel()
+                pendingDownload = nil
+                framesPerSecond = nil
+                data = try await client.screenshot()
+            }
             guard client === self.client else { return }
             if data == lastFrame {
                 // An unchanged black frame still counts toward "protected".
@@ -191,6 +211,7 @@ final class RemoteModel: ObservableObject {
                 lastFrame = data
                 blackFrames = frame.isNearlyBlack ? blackFrames + 1 : 0
                 screenshot = frame.image
+                countFrame()
             }
             screenIsProtected = blackFrames >= 5
         } catch {
@@ -208,7 +229,18 @@ final class RemoteModel: ObservableObject {
         if await !failed.isConnected, status == .connected { status = .unreachable }
     }
 
+    private func countFrame() {
+        guard smoothPreview else { return }
+        let now = ContinuousClock.now
+        frameTimes = frameTimes.filter { now - $0 < .seconds(3) } + [now]
+        framesPerSecond = frameTimes.count > 1 ? Double(frameTimes.count) / 3 : nil
+    }
+
     private func resetTVState() {
+        pendingDownload?.cancel()
+        pendingDownload = nil
+        frameTimes = []
+        framesPerSecond = nil
         screenshot = nil
         lastFrame = nil
         blackFrames = 0
@@ -313,7 +345,10 @@ private struct Frame: @unchecked Sendable {
 
     static func decode(_ data: Data) async -> Frame? {
         await Task.detached(priority: .utility) {
-            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+            // A frame read while the TV was overwriting its file is cut short: skip it.
+            guard data.count > 2, data.suffix(2).elementsEqual([0xFF, 0xD9]),
+                  let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  CGImageSourceGetStatus(source) == .statusComplete,
                   let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                       kCGImageSourceCreateThumbnailFromImageAlways: true,
                       kCGImageSourceThumbnailMaxPixelSize: 720,

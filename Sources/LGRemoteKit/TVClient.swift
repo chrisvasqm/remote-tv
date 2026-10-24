@@ -121,12 +121,22 @@ public actor TVClient {
 
     /// Captures the screen. Protected content (Netflix, HDMI, Live TV) comes back black.
     public func screenshot() async throws -> Data {
+        try await download(capture())
+    }
+
+    /// Asks the TV to capture the screen and returns where to fetch the image.
+    /// The TV captures one frame at a time and reuses the same file for each.
+    public func capture() async throws -> URL {
         let response = try await request("ssap://tv/executeOneShot")
         guard let uri = response["imageUri"] as? String, let url = onTVHost(uri) else {
             throw TVError.badResponse("screenshot without an image address")
         }
-        let (data, _) = try await session.data(from: url)
-        return data
+        return url
+    }
+
+    /// Fetches a captured image. Runs outside the actor so it can overlap the next capture.
+    public nonisolated func download(_ url: URL) async throws -> Data {
+        try await session.data(from: url).0
     }
 
     // MARK: - Socket plumbing
